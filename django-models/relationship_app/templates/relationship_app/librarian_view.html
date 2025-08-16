@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Librarian Dashboard</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #e2f7e2; color: #333; }
+        h1 { color: #28a745; }
+        p { background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>Welcome, Librarian!</h1>
+    <p>This is the dashboard for librarians, where you can manage books and users.</p>
+    <a href="{% url 'home' %}">Back to Home</a> | <a href="{% url 'logout' %}">Logout</a>
+</body>
+</html>
