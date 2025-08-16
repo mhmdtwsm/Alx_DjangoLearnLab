@@ -64,12 +64,24 @@ def run_queries():
     # --- Task 0: Implement Sample Queries ---
 
     print("\nQuery 1: All books by a specific author (Jane Austen)")
-    jane_austen_books = Book.objects.filter(author=author1)
-    for book in jane_austen_books:
-        print(f"- {book.title} by {book.author.name}")
+    # --- START OF EDITED SECTION ---
+    author_name_to_find = "Jane Austen"
+    try:
+        author_obj = Author.objects.get(name=author_name_to_find)
+        jane_austen_books = Book.objects.filter(author=author_obj)
+        for book in jane_austen_books:
+            print(f"- {book.title} by {book.author.name}")
+    except Author.DoesNotExist:
+        print(f"Error: Author with name '{author_name_to_find}' does not exist.")
+    except Author.MultipleObjectsReturned:
+        print(
+            f"Error: Multiple authors with name '{
+                author_name_to_find
+            }' found. Please ensure author names are unique."
+        )
+    # --- END OF EDITED SECTION ---
 
     print("\nQuery 2: All books in a library (Central Library)")
-    # --- START OF EDITED SECTION ---
     library_name = "Central Library"
     try:
         central_library_obj = Library.objects.get(name=library_name)
@@ -84,10 +96,8 @@ def run_queries():
                 library_name
             }' found. Please use a unique identifier."
         )
-    # --- END OF EDITED SECTION ---
 
     print("\nQuery 3: Retrieve the librarian for a library (Central Library)")
-    # We still use library1 from creation, but you could also retrieve it via .get()
     try:
         central_library_obj_for_librarian = Library.objects.get(name="Central Library")
         central_librarian = central_library_obj_for_librarian.librarian
