@@ -37,3 +37,4 @@ print(f"Book created: {book}")
 - The `save()` method commits the object to the database
 - After saving, Django automatically assigns an `id` (primary key) to the object
 - The `__str__` method returns the book's title for string representation
+
