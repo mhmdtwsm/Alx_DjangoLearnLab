@@ -26,7 +26,7 @@ urlpatterns = [
     path("librarian-dashboard/", views.librarian_view, name="librarian_dashboard"),
     path("member-dashboard/", views.member_view, name="member_dashboard"),
     # Task 4: Custom Permissions Views (placeholders)
-    path("books/add/", views.add_book_view, name="add_book"),
-    path("books/<int:pk>/edit/", views.edit_book_view, name="edit_book"),
+    path("add_book/", views.add_book_view, name="add_book"),
+    path("edit_book/<int:pk>/", views.edit_book_view, name="edit_book"),
     path("books/<int:pk>/delete/", views.delete_book_view, name="delete_book"),
 ]
