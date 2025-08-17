@@ -8,18 +8,14 @@ router.register(r'books_all', views.BookViewSet, basename='book_all')
 
 # URL patterns for the api app
 urlpatterns = [
-    # API overview page (public)
+    # API overview page
     path('', views.api_overview, name='api-overview'),
     
-    # Authentication endpoints
-    path('auth/token/', views.CustomAuthToken.as_view(), name='api_token_auth'),
-    path('auth/register/', views.register_user, name='api_register'),
-    
-    # Book endpoints (authenticated)
+    # Route for the BookList view (ListAPIView)
     path('books/', views.BookList.as_view(), name='book-list'),
     
-    # Public endpoint for testing
-    path('books-public/', views.book_list_function_view, name='book-list-public'),
+    # Alternative function-based view
+    path('books-alt/', views.book_list_function_view, name='book-list-alt'),
     
     # Include the router URLs for BookViewSet (all CRUD operations)
     path('', include(router.urls)),  # This includes all routes registered with the router

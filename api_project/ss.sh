@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Django REST Framework CRUD ViewSets Setup Script
-# This script implements full CRUD operations using ViewSets and Routers
+# Django REST Framework Authentication & Permissions Setup Script
+# This script implements token authentication and permission classes
 
 set -e  # Exit on any error
 
@@ -40,34 +40,147 @@ if [ ! -d "api" ]; then
     exit 1
 fi
 
-print_header "Setting up Django REST Framework CRUD Operations with ViewSets"
+print_header "Setting up Django REST Framework Authentication & Permissions"
 echo "=================================================================="
 
-# Step 1: Update views.py with BookViewSet
-print_header "Step 1: Adding BookViewSet to views.py"
+# Step 1: Update settings.py with authentication configuration
+print_header "Step 1: Configuring Authentication in settings.py"
+
+# Create backup of settings.py
+cp api_project/settings.py api_project/settings.py.auth_backup
+print_status "✓ Created backup of settings.py"
+
+# Check if rest_framework.authtoken is already in INSTALLED_APPS
+if grep -q "'rest_framework.authtoken'" api_project/settings.py; then
+    print_warning "rest_framework.authtoken already in INSTALLED_APPS"
+else
+    # Add rest_framework.authtoken to INSTALLED_APPS
+    sed -i "/INSTALLED_APPS = \[/,/\]/ s/\]/    'rest_framework.authtoken',\n]/" api_project/settings.py
+    print_status "✓ Added 'rest_framework.authtoken' to INSTALLED_APPS"
+fi
+
+# Add REST_FRAMEWORK configuration with authentication
+if grep -q "REST_FRAMEWORK = {" api_project/settings.py; then
+    print_warning "REST_FRAMEWORK configuration already exists, updating..."
+    # Update existing REST_FRAMEWORK configuration
+    python3 << 'EOF'
+import re
+
+# Read the settings file
+with open('api_project/settings.py', 'r') as f:
+    content = f.read()
+
+# Define the new REST_FRAMEWORK configuration
+new_config = """REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+}"""
+
+# Replace existing REST_FRAMEWORK configuration
+pattern = r'REST_FRAMEWORK\s*=\s*\{[^}]*\}'
+if re.search(pattern, content):
+    content = re.sub(pattern, new_config, content)
+else:
+    # If no REST_FRAMEWORK found, add it at the end
+    content += '\n\n' + new_config + '\n'
+
+# Write back to file
+with open('api_project/settings.py', 'w') as f:
+    f.write(content)
+
+print("✓ Updated REST_FRAMEWORK configuration")
+EOF
+else
+    # Add new REST_FRAMEWORK configuration
+    cat >> api_project/settings.py << 'EOF'
+
+# Django REST Framework Configuration
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+}
+EOF
+    print_status "✓ Added REST_FRAMEWORK configuration to settings.py"
+fi
+
+print_status "✓ Authentication configuration completed"
+
+# Step 2: Create authentication views
+print_header "Step 2: Creating Authentication Views"
 
 # Create backup of existing views.py
-cp api/views.py api/views.py.crud_backup
+cp api/views.py api/views.py.auth_backup
 print_status "✓ Created backup of existing views.py"
 
-# Update views.py with ViewSet
+# Update views.py with authentication views and permissions
 cat > api/views.py << 'EOF'
 from rest_framework import generics, status, viewsets
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, AllowAny
+from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.authtoken.models import Token
+from django.contrib.auth.models import User
 from django.http import JsonResponse
 from .models import Book
 from .serializers import BookSerializer
 
 
+class CustomAuthToken(ObtainAuthToken):
+    """
+    Custom authentication token view that returns user information along with the token.
+    
+    POST /api/auth/token/ - Get authentication token
+    Body: {"username": "your_username", "password": "your_password"}
+    """
+    
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data,
+                                           context={'request': request})
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            token, created = Token.objects.get_or_create(user=user)
+            return Response({
+                'token': token.key,
+                'user_id': user.pk,
+                'username': user.username,
+                'email': user.email,
+                'message': 'Authentication successful'
+            })
+        return Response({
+            'error': 'Invalid credentials',
+            'details': serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+
 class BookList(generics.ListAPIView):
     """
     API view to retrieve list of books.
+    Requires authentication to access.
     
     GET /api/books/ - Returns a list of all books in JSON format
     """
     queryset = Book.objects.all()
     serializer_class = BookSerializer
+    permission_classes = [IsAuthenticated]  # Requires authentication
     
     def get(self, request, *args, **kwargs):
         """
@@ -84,18 +197,37 @@ class BookList(generics.ListAPIView):
 
 class BookViewSet(viewsets.ModelViewSet):
     """
-    A ViewSet for handling all CRUD operations on Book model.
+    A ViewSet for handling all CRUD operations on Book model with authentication.
+    
+    Permissions:
+    - List/Retrieve: Authenticated users can read
+    - Create/Update/Delete: Authenticated users can modify
     
     This ViewSet automatically provides the following endpoints:
-    - GET /books_all/ - List all books
-    - POST /books_all/ - Create a new book
-    - GET /books_all/{id}/ - Retrieve a specific book
-    - PUT /books_all/{id}/ - Update a specific book
-    - PATCH /books_all/{id}/ - Partially update a specific book
-    - DELETE /books_all/{id}/ - Delete a specific book
+    - GET /books_all/ - List all books (requires authentication)
+    - POST /books_all/ - Create a new book (requires authentication)
+    - GET /books_all/{id}/ - Retrieve a specific book (requires authentication)
+    - PUT /books_all/{id}/ - Update a specific book (requires authentication)
+    - PATCH /books_all/{id}/ - Partially update a specific book (requires authentication)
+    - DELETE /books_all/{id}/ - Delete a specific book (requires authentication)
     """
     queryset = Book.objects.all()
     serializer_class = BookSerializer
+    permission_classes = [IsAuthenticated]  # All operations require authentication
+    
+    def get_permissions(self):
+        """
+        Instantiate and return the list of permissions that this view requires.
+        You can customize permissions per action if needed.
+        """
+        if self.action in ['list', 'retrieve']:
+            # Read operations - authenticated users only
+            permission_classes = [IsAuthenticated]
+        else:
+            # Write operations - authenticated users only
+            permission_classes = [IsAuthenticated]
+        
+        return [permission() for permission in permission_classes]
     
     def list(self, request):
         """
@@ -107,7 +239,9 @@ class BookViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(queryset, many=True)
             return Response({
                 'count': queryset.count(),
-                'results': serializer.data
+                'results': serializer.data,
+                'user': request.user.username,
+                'message': 'Books retrieved successfully'
             })
         except Exception as e:
             return Response(
@@ -127,7 +261,8 @@ class BookViewSet(viewsets.ModelViewSet):
                 return Response(
                     {
                         'message': 'Book created successfully',
-                        'data': serializer.data
+                        'data': serializer.data,
+                        'created_by': request.user.username
                     }, 
                     status=status.HTTP_201_CREATED
                 )
@@ -152,7 +287,10 @@ class BookViewSet(viewsets.ModelViewSet):
         try:
             instance = self.get_object()
             serializer = self.get_serializer(instance)
-            return Response(serializer.data)
+            return Response({
+                'data': serializer.data,
+                'accessed_by': request.user.username
+            })
         except Book.DoesNotExist:
             return Response(
                 {"error": "Book not found"}, 
@@ -177,7 +315,8 @@ class BookViewSet(viewsets.ModelViewSet):
                 return Response(
                     {
                         'message': 'Book updated successfully',
-                        'data': serializer.data
+                        'data': serializer.data,
+                        'updated_by': request.user.username
                     }
                 )
             return Response(
@@ -211,7 +350,8 @@ class BookViewSet(viewsets.ModelViewSet):
                 return Response(
                     {
                         'message': 'Book partially updated successfully',
-                        'data': serializer.data
+                        'data': serializer.data,
+                        'updated_by': request.user.username
                     }
                 )
             return Response(
@@ -243,7 +383,8 @@ class BookViewSet(viewsets.ModelViewSet):
             self.perform_destroy(instance)
             return Response(
                 {
-                    'message': f'Book "{book_title}" deleted successfully'
+                    'message': f'Book "{book_title}" deleted successfully',
+                    'deleted_by': request.user.username
                 }, 
                 status=status.HTTP_204_NO_CONTENT
             )
@@ -260,47 +401,108 @@ class BookViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['GET'])
+@permission_classes([AllowAny])  # Public endpoint for testing
 def book_list_function_view(request):
     """
     Alternative function-based view for listing books.
-    This is an example of how you could implement the same functionality
-    using a function-based view instead of a class-based view.
+    This endpoint is public (no authentication required) for testing purposes.
     """
     if request.method == 'GET':
         books = Book.objects.all()
         serializer = BookSerializer(books, many=True)
-        return Response(serializer.data)
+        return Response({
+            'data': serializer.data,
+            'message': 'Public endpoint - no authentication required'
+        })
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Public endpoint
 def api_overview(request):
     """
-    Simple view to provide API documentation/overview.
+    API overview endpoint - publicly accessible.
     """
     api_urls = {
-        'List Books (ListAPIView)': '/api/books/',
-        'CRUD Operations (ViewSet)': {
-            'List all books': 'GET /api/books_all/',
-            'Create book': 'POST /api/books_all/',
-            'Get book by ID': 'GET /api/books_all/{id}/',
-            'Update book': 'PUT /api/books_all/{id}/',
-            'Partial update': 'PATCH /api/books_all/{id}/',
-            'Delete book': 'DELETE /api/books_all/{id}/',
+        'Authentication': {
+            'Get Token': 'POST /api/auth/token/ (username, password)',
+            'Usage': 'Include "Authorization: Token your_token_here" in headers',
         },
-        'API Overview': '/api/',
+        'Books API (Authenticated)': {
+            'List Books (ListAPIView)': 'GET /api/books/',
+            'CRUD Operations (ViewSet)': {
+                'List all books': 'GET /api/books_all/',
+                'Create book': 'POST /api/books_all/',
+                'Get book by ID': 'GET /api/books_all/{id}/',
+                'Update book': 'PUT /api/books_all/{id}/',
+                'Partial update': 'PATCH /api/books_all/{id}/',
+                'Delete book': 'DELETE /api/books_all/{id}/',
+            },
+        },
+        'Public Endpoints': {
+            'API Overview': 'GET /api/',
+            'Public Book List': 'GET /api/books-public/',
+        },
     }
     return JsonResponse(api_urls)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])  # Public endpoint for user registration
+def register_user(request):
+    """
+    User registration endpoint.
+    POST /api/auth/register/
+    Body: {"username": "new_user", "password": "password", "email": "email@example.com"}
+    """
+    try:
+        username = request.data.get('username')
+        password = request.data.get('password')
+        email = request.data.get('email', '')
+        
+        if not username or not password:
+            return Response({
+                'error': 'Username and password are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if User.objects.filter(username=username).exists():
+            return Response({
+                'error': 'Username already exists'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create user
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            email=email
+        )
+        
+        # Create token for the new user
+        token, created = Token.objects.get_or_create(user=user)
+        
+        return Response({
+            'message': 'User created successfully',
+            'user_id': user.pk,
+            'username': user.username,
+            'token': token.key
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        return Response({
+            'error': 'Failed to create user',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 EOF
 
-print_status "✓ Updated api/views.py with BookViewSet for full CRUD operations"
+print_status "✓ Updated api/views.py with authentication and permission classes"
 
-# Step 2: Update urls.py with Router configuration
-print_header "Step 2: Updating api/urls.py with Router configuration"
+# Step 3: Update urls.py with authentication endpoints
+print_header "Step 3: Updating URL Configuration"
 
 # Create backup of existing urls.py
-cp api/urls.py api/urls.py.crud_backup
+cp api/urls.py api/urls.py.auth_backup
 print_status "✓ Created backup of existing urls.py"
 
-# Update urls.py with Router
+# Update urls.py with authentication endpoints
 cat > api/urls.py << 'EOF'
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -312,29 +514,45 @@ router.register(r'books_all', views.BookViewSet, basename='book_all')
 
 # URL patterns for the api app
 urlpatterns = [
-    # API overview page
+    # API overview page (public)
     path('', views.api_overview, name='api-overview'),
     
-    # Route for the BookList view (ListAPIView)
+    # Authentication endpoints
+    path('auth/token/', views.CustomAuthToken.as_view(), name='api_token_auth'),
+    path('auth/register/', views.register_user, name='api_register'),
+    
+    # Book endpoints (authenticated)
     path('books/', views.BookList.as_view(), name='book-list'),
     
-    # Alternative function-based view
-    path('books-alt/', views.book_list_function_view, name='book-list-alt'),
+    # Public endpoint for testing
+    path('books-public/', views.book_list_function_view, name='book-list-public'),
     
     # Include the router URLs for BookViewSet (all CRUD operations)
     path('', include(router.urls)),  # This includes all routes registered with the router
 ]
 EOF
 
-print_status "✓ Updated api/urls.py with DefaultRouter configuration"
+print_status "✓ Updated api/urls.py with authentication endpoints"
 
-# Step 3: Create comprehensive test script for CRUD operations
-print_header "Step 3: Creating CRUD testing script"
-cat > test_crud_api.sh << 'EOF'
+# Step 4: Run migrations for authtoken
+print_header "Step 4: Running Database Migrations"
+
+if [ -d "venv" ]; then
+    print_status "Activating virtual environment..."
+    source venv/bin/activate
+fi
+
+print_status "Running migrations for authtoken..."
+python manage.py migrate
+print_status "✓ Database migrations completed"
+
+# Step 5: Create test script for authentication
+print_header "Step 5: Creating Authentication Test Script"
+cat > test_auth_api.sh << 'EOF'
 #!/bin/bash
 
-# CRUD API Testing Script
-# This script provides comprehensive testing for all CRUD operations
+# Authentication API Testing Script
+# This script provides comprehensive testing for authentication and permissions
 
 # Colors for output
 RED='\033[0;31m'
@@ -362,78 +580,66 @@ print_error() {
 # Base URL (adjust if your server runs on different port)
 BASE_URL="http://127.0.0.1:8000"
 
-print_test_info "Django REST Framework CRUD API Test Script"
-echo "=============================================="
+print_test_info "Django REST Framework Authentication & Permissions Test Script"
+echo "=================================================================="
 
 echo ""
-print_test_info "Testing all CRUD operations on BookViewSet..."
+print_test_info "Testing Authentication and Permission System..."
 echo ""
 
-# Test 1: List all books (GET)
-echo "1. LIST ALL BOOKS (GET /api/books_all/)"
-echo "   Command: curl -X GET ${BASE_URL}/api/books_all/"
-echo "   Expected: JSON list of all books"
+# Test 1: Public endpoints (no authentication required)
+echo "1. PUBLIC ENDPOINTS (No Authentication Required)"
+echo "   API Overview: curl -X GET ${BASE_URL}/api/"
+echo "   Public Books: curl -X GET ${BASE_URL}/api/books-public/"
 echo ""
 
-# Test 2: Create a new book (POST)
-echo "2. CREATE A NEW BOOK (POST /api/books_all/)"
-echo "   Command: curl -X POST ${BASE_URL}/api/books_all/ \\"
+# Test 2: User registration
+echo "2. USER REGISTRATION"
+echo "   Command: curl -X POST ${BASE_URL}/api/auth/register/ \\"
 echo "            -H 'Content-Type: application/json' \\"
-echo "            -d '{\"title\": \"Test Book\", \"author\": \"Test Author\", \"publication_year\": 2024}'"
-echo "   Expected: 201 Created with book data"
+echo "            -d '{\"username\": \"testuser\", \"password\": \"testpass123\", \"email\": \"test@example.com\"}'"
+echo "   Expected: 201 Created with user data and token"
 echo ""
 
-# Test 3: Get a specific book (GET by ID)
-echo "3. GET SPECIFIC BOOK (GET /api/books_all/{id}/)"
-echo "   Command: curl -X GET ${BASE_URL}/api/books_all/1/"
-echo "   Expected: JSON data for book with ID 1"
-echo ""
-
-# Test 4: Update a book (PUT)
-echo "4. UPDATE A BOOK (PUT /api/books_all/{id}/)"
-echo "   Command: curl -X PUT ${BASE_URL}/api/books_all/1/ \\"
+# Test 3: Token authentication
+echo "3. GET AUTHENTICATION TOKEN"
+echo "   Command: curl -X POST ${BASE_URL}/api/auth/token/ \\"
 echo "            -H 'Content-Type: application/json' \\"
-echo "            -d '{\"title\": \"Updated Book\", \"author\": \"Updated Author\", \"publication_year\": 2024}'"
-echo "   Expected: 200 OK with updated book data"
+echo "            -d '{\"username\": \"testuser\", \"password\": \"testpass123\"}'"
+echo "   Expected: 200 OK with token and user information"
 echo ""
 
-# Test 5: Partial update (PATCH)
-echo "5. PARTIAL UPDATE (PATCH /api/books_all/{id}/)"
-echo "   Command: curl -X PATCH ${BASE_URL}/api/books_all/1/ \\"
-echo "            -H 'Content-Type: application/json' \\"
-echo "            -d '{\"title\": \"Partially Updated Title\"}'"
-echo "   Expected: 200 OK with partially updated book data"
-echo ""
-
-# Test 6: Delete a book (DELETE)
-echo "6. DELETE A BOOK (DELETE /api/books_all/{id}/)"
-echo "   Command: curl -X DELETE ${BASE_URL}/api/books_all/1/"
-echo "   Expected: 204 No Content"
-echo ""
-
-echo "=============================================="
-print_test_info "Additional Testing Options:"
-echo ""
-
-# Original ListAPIView endpoint
-echo "7. ORIGINAL LIST VIEW (GET /api/books/)"
+# Test 4: Access protected endpoints without token (should fail)
+echo "4. ACCESS PROTECTED ENDPOINT WITHOUT TOKEN (Should Fail)"
 echo "   Command: curl -X GET ${BASE_URL}/api/books/"
-echo "   Expected: JSON list using ListAPIView"
+echo "   Expected: 401 Unauthorized"
 echo ""
 
-# API Overview
-echo "8. API OVERVIEW (GET /api/)"
-echo "   Command: curl -X GET ${BASE_URL}/api/"
-echo "   Expected: JSON overview of all available endpoints"
+# Test 5: Access protected endpoints with token (should succeed)
+echo "5. ACCESS PROTECTED ENDPOINT WITH TOKEN (Should Succeed)"
+echo "   Command: curl -X GET ${BASE_URL}/api/books/ \\"
+echo "            -H 'Authorization: Token YOUR_TOKEN_HERE'"
+echo "   Expected: 200 OK with book data"
+echo ""
+
+# Test 6: CRUD operations with authentication
+echo "6. CRUD OPERATIONS WITH AUTHENTICATION"
+echo "   List Books: curl -X GET ${BASE_URL}/api/books_all/ \\"
+echo "               -H 'Authorization: Token YOUR_TOKEN_HERE'"
+echo ""
+echo "   Create Book: curl -X POST ${BASE_URL}/api/books_all/ \\"
+echo "                -H 'Authorization: Token YOUR_TOKEN_HERE' \\"
+echo "                -H 'Content-Type: application/json' \\"
+echo "                -d '{\"title\": \"Auth Test Book\", \"author\": \"Test Author\", \"publication_year\": 2024}'"
 echo ""
 
 echo "=============================================="
 print_test_info "Interactive Testing Functions:"
 echo ""
 
-# Function to run actual tests
-run_tests() {
-    print_test_info "Running actual API tests..."
+# Function to run actual authentication tests
+run_auth_tests() {
+    print_test_info "Running authentication tests..."
     
     # Check if server is running
     if ! curl -s "${BASE_URL}/api/" > /dev/null; then
@@ -444,85 +650,146 @@ run_tests() {
     
     print_success "Server is running!"
     
-    # Test 1: List books
-    print_test_info "Testing: List all books"
-    response=$(curl -s -w "HTTPSTATUS:%{http_code}" -X GET "${BASE_URL}/api/books_all/")
+    # Test 1: Public API overview
+    print_test_info "Testing: Public API overview"
+    response=$(curl -s -w "HTTPSTATUS:%{http_code}" -X GET "${BASE_URL}/api/")
     http_code=$(echo $response | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
     body=$(echo $response | sed -e 's/HTTPSTATUS\:.*//g')
     
     if [ "$http_code" -eq 200 ]; then
-        print_success "✓ List books: HTTP $http_code"
-        echo "Response: $body" | python -m json.tool 2>/dev/null || echo "$body"
+        print_success "✓ Public API overview: HTTP $http_code"
     else
-        print_error "✗ List books failed: HTTP $http_code"
-        echo "Response: $body"
+        print_error "✗ Public API overview failed: HTTP $http_code"
     fi
     
     echo ""
     
-    # Test 2: Create a book
-    print_test_info "Testing: Create a new book"
-    response=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST "${BASE_URL}/api/books_all/" \
+    # Test 2: Try to access protected endpoint without token (should fail)
+    print_test_info "Testing: Protected endpoint without token (should fail)"
+    response=$(curl -s -w "HTTPSTATUS:%{http_code}" -X GET "${BASE_URL}/api/books/")
+    http_code=$(echo $response | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
+    
+    if [ "$http_code" -eq 401 ]; then
+        print_success "✓ Protected endpoint correctly rejected: HTTP $http_code"
+    else
+        print_warning "⚠ Expected 401, got HTTP $http_code"
+    fi
+    
+    echo ""
+    
+    # Test 3: Register a test user
+    print_test_info "Testing: User registration"
+    test_username="testuser_$(date +%s)"  # Unique username
+    response=$(curl -s -w "HTTPSTATUS:%{http_code}" -X POST "${BASE_URL}/api/auth/register/" \
         -H "Content-Type: application/json" \
-        -d '{"title": "Test Book via Script", "author": "Script Author", "publication_year": 2024}')
+        -d "{\"username\": \"${test_username}\", \"password\": \"testpass123\", \"email\": \"test@example.com\"}")
     http_code=$(echo $response | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
     body=$(echo $response | sed -e 's/HTTPSTATUS\:.*//g')
     
     if [ "$http_code" -eq 201 ]; then
-        print_success "✓ Create book: HTTP $http_code"
-        echo "Response: $body" | python -m json.tool 2>/dev/null || echo "$body"
+        print_success "✓ User registration: HTTP $http_code"
         
-        # Extract book ID for further tests
-        book_id=$(echo "$body" | python -c "import sys, json; data=json.load(sys.stdin); print(data.get('data', {}).get('id', 'unknown'))" 2>/dev/null || echo "unknown")
+        # Extract token from response
+        token=$(echo "$body" | python -c "import sys, json; data=json.load(sys.stdin); print(data.get('token', 'unknown'))" 2>/dev/null || echo "unknown")
         
-        if [ "$book_id" != "unknown" ]; then
-            print_test_info "Created book with ID: $book_id"
+        if [ "$token" != "unknown" ]; then
+            print_test_info "Got token: ${token:0:20}..."
             
-            # Test 3: Get the created book
-            print_test_info "Testing: Get book by ID ($book_id)"
-            response=$(curl -s -w "HTTPSTATUS:%{http_code}" -X GET "${BASE_URL}/api/books_all/${book_id}/")
+            # Test 4: Access protected endpoint with token
+            print_test_info "Testing: Protected endpoint with token"
+            response=$(curl -s -w "HTTPSTATUS:%{http_code}" -X GET "${BASE_URL}/api/books/" \
+                -H "Authorization: Token $token")
             http_code=$(echo $response | tr -d '\n' | sed -e 's/.*HTTPSTATUS://')
-            body=$(echo $response | sed -e 's/HTTPSTATUS\:.*//g')
             
             if [ "$http_code" -eq 200 ]; then
-                print_success "✓ Get book by ID: HTTP $http_code"
-                echo "Response: $body" | python -m json.tool 2>/dev/null || echo "$body"
+                print_success "✓ Protected endpoint with token: HTTP $http_code"
             else
-                print_error "✗ Get book by ID failed: HTTP $http_code"
+                print_error "✗ Protected endpoint with token failed: HTTP $http_code"
             fi
         fi
     else
-        print_error "✗ Create book failed: HTTP $http_code"
+        print_error "✗ User registration failed: HTTP $http_code"
         echo "Response: $body"
     fi
     
     echo ""
-    print_test_info "Basic tests completed. Use the manual commands above for full testing."
+    print_test_info "Authentication tests completed."
 }
 
-# Check if user wants to run interactive tests
-if [ "$1" = "--run" ]; then
-    run_tests
-else
-    echo "To run interactive tests, use: $0 --run"
-    echo ""
-    print_warning "Make sure your Django server is running first:"
-    echo "python manage.py runserver"
-fi
+# Function to create a superuser for testing
+create_test_superuser() {
+    print_test_info "Creating test superuser..."
+    
+    # Create superuser script
+    cat > create_superuser.py << 'PYEOF'
+import os
+import django
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'api_project.settings')
+django.setup()
+
+from django.contrib.auth.models import User
+from rest_framework.authtoken.models import Token
+
+username = 'admin'
+password = 'admin123'
+email = 'admin@example.com'
+
+if not User.objects.filter(username=username).exists():
+    user = User.objects.create_superuser(username, email, password)
+    token, created = Token.objects.get_or_create(user=user)
+    print(f"Superuser created: {username}")
+    print(f"Token: {token.key}")
+else:
+    user = User.objects.get(username=username)
+    token, created = Token.objects.get_or_create(user=user)
+    print(f"Superuser already exists: {username}")
+    print(f"Token: {token.key}")
+PYEOF
+    
+    python create_superuser.py
+    rm create_superuser.py
+}
+
+# Check command line arguments
+case "$1" in
+    "--run")
+        run_auth_tests
+        ;;
+    "--create-superuser")
+        create_test_superuser
+        ;;
+    "--help")
+        echo "Usage: $0 [--run|--create-superuser|--help]"
+        echo "  --run              Run interactive authentication tests"
+        echo "  --create-superuser Create a test superuser with token"
+        echo "  --help             Show this help message"
+        ;;
+    *)
+        echo "Manual testing commands shown above."
+        echo ""
+        print_warning "To run interactive tests: $0 --run"
+        print_warning "To create test superuser: $0 --create-superuser"
+        print_warning "For help: $0 --help"
+        echo ""
+        print_warning "Make sure your Django server is running first:"
+        echo "python manage.py runserver"
+        ;;
+esac
 EOF
 
-chmod +x test_crud_api.sh
-print_status "✓ Created test_crud_api.sh script for comprehensive CRUD testing"
+chmod +x test_auth_api.sh
+print_status "✓ Created test_auth_api.sh script for authentication testing"
 
-# Step 4: Create sample data script with more books
-print_header "Step 4: Creating enhanced sample data script"
-cat > create_sample_books_crud.py << 'EOF'
+# Step 6: Create user management script
+print_header "Step 6: Creating User Management Script"
+cat > manage_users.py << 'EOF'
 #!/usr/bin/env python
 """
-Enhanced script to create sample book data for testing CRUD operations.
-Run this after setting up your database and running migrations.
+User management script for Django REST Framework authentication.
+This script helps create users and manage tokens for testing.
 
-Usage: python create_sample_books_crud.py
+Usage: python manage_users.py
 """
 
 import os
@@ -533,103 +800,149 @@ import sys
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'api_project.settings')
 django.setup()
 
-from api.models import Book
+from django.contrib.auth.models import User
+from rest_framework.authtoken.models import Token
 
-def create_sample_books():
-    """Create sample books for testing CRUD operations."""
+def create_test_users():
+    """Create test users with tokens."""
     
-    sample_books = [
+    test_users = [
         {
-            'title': 'The Django Book',
-            'author': 'Adrian Holovaty',
-            'publication_year': 2009
+            'username': 'testuser1',
+            'password': 'testpass123',
+            'email': 'test1@example.com',
+            'is_staff': False
         },
         {
-            'title': 'Two Scoops of Django',
-            'author': 'Daniel Roy Greenfeld',
-            'publication_year': 2020
+            'username': 'testuser2',
+            'password': 'testpass123',
+            'email': 'test2@example.com',
+            'is_staff': False
         },
         {
-            'title': 'Django for Beginners',
-            'author': 'William S. Vincent',
-            'publication_year': 2021
-        },
-        {
-            'title': 'Django REST Framework Tutorial',
-            'author': 'Test Author',
-            'publication_year': 2023
-        },
-        {
-            'title': 'Python Crash Course',
-            'author': 'Eric Matthes',
-            'publication_year': 2019
-        },
-        {
-            'title': 'Automate the Boring Stuff with Python',
-            'author': 'Al Sweigart',
-            'publication_year': 2020
-        },
-        {
-            'title': 'Clean Code',
-            'author': 'Robert C. Martin',
-            'publication_year': 2008
-        },
-        {
-            'title': 'The Pragmatic Programmer',
-            'author': 'David Thomas',
-            'publication_year': 1999
+            'username': 'admin',
+            'password': 'admin123',
+            'email': 'admin@example.com',
+            'is_staff': True,
+            'is_superuser': True
         },
     ]
     
     created_count = 0
-    for book_data in sample_books:
-        book, created = Book.objects.get_or_create(
-            title=book_data['title'],
-            defaults=book_data
-        )
-        if created:
-            created_count += 1
-            print(f"✓ Created book: {book.title} (ID: {book.id})")
+    for user_data in test_users:
+        username = user_data['username']
+        
+        if User.objects.filter(username=username).exists():
+            user = User.objects.get(username=username)
+            print(f"- User already exists: {username}")
         else:
-            print(f"- Book already exists: {book.title} (ID: {book.id})")
+            if user_data.get('is_superuser'):
+                user = User.objects.create_superuser(
+                    username=username,
+                    email=user_data['email'],
+                    password=user_data['password']
+                )
+            else:
+                user = User.objects.create_user(
+                    username=username,
+                    email=user_data['email'],
+                    password=user_data['password']
+                )
+                user.is_staff = user_data.get('is_staff', False)
+                user.save()
+            
+            created_count += 1
+            print(f"✓ Created user: {username}")
+        
+        # Create or get token
+        token, created = Token.objects.get_or_create(user=user)
+        status = "created" if created else "exists"
+        print(f"  Token ({status}): {token.key}")
+        print(f"  User ID: {user.id}")
+        print()
     
-    print(f"\nSummary: {created_count} new books created.")
-    print(f"Total books in database: {Book.objects.count()}")
+    print(f"Summary: {created_count} new users created.")
+    print(f"Total users in database: {User.objects.count()}")
+
+def list_all_users():
+    """List all users with their tokens."""
+    print("All users in database:")
+    print("-" * 80)
+    print(f"{'ID':<4} {'Username':<15} {'Email':<25} {'Staff':<6} {'Token':<40}")
+    print("-" * 80)
     
-    # Display all books with their IDs for testing
-    print("\nAll books in database:")
-    print("-" * 50)
-    for book in Book.objects.all():
-        print(f"ID: {book.id:2d} | {book.title} by {book.author} ({book.publication_year})")
+    for user in User.objects.all():
+        try:
+            token = Token.objects.get(user=user).key
+        except Token.DoesNotExist:
+            token = "No token"
+        
+        print(f"{user.id:<4} {user.username:<15} {user.email:<25} {str(user.is_staff):<6} {token:<40}")
+
+def delete_test_users():
+    """Delete test users (except superusers)."""
+    test_usernames = ['testuser1', 'testuser2']
+    deleted_count = 0
+    
+    for username in test_usernames:
+        try:
+            user = User.objects.get(username=username)
+            if not user.is_superuser:
+                user.delete()
+                deleted_count += 1
+                print(f"✓ Deleted user: {username}")
+            else:
+                print(f"- Skipped superuser: {username}")
+        except User.DoesNotExist:
+            print(f"- User not found: {username}")
+    
+    print(f"Summary: {deleted_count} users deleted.")
 
 if __name__ == '__main__':
-    try:
-        create_sample_books()
-    except Exception as e:
-        print(f"Error creating sample books: {e}")
-        sys.exit(1)
+    print("Django REST Framework User Management")
+    print("====================================")
+    
+    if len(sys.argv) > 1:
+        command = sys.argv[1]
+        if command == 'create':
+            create_test_users()
+        elif command == 'list':
+            list_all_users()
+        elif command == 'delete':
+            delete_test_users()
+        else:
+            print(f"Unknown command: {command}")
+            print("Available commands: create, list, delete")
+    else:
+        print("Available commands:")
+        print("  python manage_users.py create  - Create test users")
+        print("  python manage_users.py list    - List all users")
+        print("  python manage_users.py delete  - Delete test users")
+        print()
+        
+        # Default action: create users
+        create_test_users()
 EOF
 
-print_status "✓ Created create_sample_books_crud.py for enhanced test data"
+print_status "✓ Created manage_users.py for user management"
 
-# Step 5: Create comprehensive API documentation
-print_header "Step 5: Creating comprehensive CRUD API documentation"
-cat > CRUD_API_README.md << 'EOF'
-# Django REST Framework CRUD API - Complete Guide
+# Step 7: Create comprehensive documentation
+print_header "Step 7: Creating Authentication Documentation"
+cat > AUTH_API_README.md << 'EOF'
+# Django REST Framework Authentication & Permissions Guide
 
-This API provides full CRUD (Create, Read, Update, Delete) operations for managing books using Django REST Framework's ViewSets and Routers.
+This guide covers the complete authentication and permission system implemented in your Django REST Framework API.
 
 ## Quick Start
 
 1. **Apply migrations** (if you haven't already):
    ```bash
-   python manage.py makemigrations
    python manage.py migrate
    ```
 
-2. **Create sample data**:
+2. **Create test users**:
    ```bash
-   python create_sample_books_crud.py
+   python manage_users.py create
    ```
 
 3. **Start the development server**:
@@ -637,359 +950,402 @@ This API provides full CRUD (Create, Read, Update, Delete) operations for managi
    python manage.py runserver
    ```
 
-4. **Test the CRUD API endpoints**:
+4. **Test authentication**:
    ```bash
-   ./test_crud_api.sh --run
+   ./test_auth_api.sh --run
    ```
 
-## API Endpoints Overview
+## Authentication System Overview
 
-### Original ListAPIView Endpoint
-- **URL**: `/api/books/`
-- **Method**: GET
-- **Description**: Returns a simple list of all books (original implementation)
+### Authentication Methods
+- **Token Authentication**: Primary method using DRF's token system
+- **Session Authentication**: For browsable API interface
 
-### ViewSet CRUD Endpoints (books_all)
+### Permission Classes
+- **IsAuthenticated**: Requires valid authentication token
+- **AllowAny**: Public endpoints (no authentication required)
 
-The ViewSet provides full CRUD operations at `/api/books_all/`:
+## API Endpoints
 
-| Operation | HTTP Method | URL | Description |
-|-----------|-------------|-----|-------------|
-| **List** | GET | `/api/books_all/` | Get all books |
-| **Create** | POST | `/api/books_all/` | Create a new book |
-| **Retrieve** | GET | `/api/books_all/{id}/` | Get a specific book |
-| **Update** | PUT | `/api/books_all/{id}/` | Update a book (full) |
-| **Partial Update** | PATCH | `/api/books_all/{id}/` | Update a book (partial) |
-| **Delete** | DELETE | `/api/books_all/{id}/` | Delete a book |
+### Authentication Endpoints
 
-## Detailed API Documentation
-
-### 1. List All Books
-- **URL**: `GET /api/books_all/`
-- **Description**: Retrieve all books in the database
-- **Response Format**:
-```json
-{
-  "count": 5,
-  "results": [
-    {
-      "id": 1,
-      "title": "The Django Book",
-      "author": "Adrian Holovaty",
-      "publication_year": 2009
-    }
-  ]
-}
-```
-
-**Example**:
-```bash
-curl -X GET http://127.0.0.1:8000/api/books_all/
-```
-
-### 2. Create a New Book
-- **URL**: `POST /api/books_all/`
-- **Description**: Create a new book
+#### 1. User Registration
+- **URL**: `POST /api/auth/register/`
+- **Description**: Create a new user account
+- **Authentication**: Not required (public)
 - **Request Body**:
 ```json
 {
-  "title": "New Book Title",
-  "author": "Author Name",
-  "publication_year": 2024
+  "username": "newuser",
+  "password": "securepassword",
+  "email": "user@example.com"
 }
 ```
-- **Response Format**:
+- **Response**:
 ```json
 {
-  "message": "Book created successfully",
-  "data": {
-    "id": 6,
-    "title": "New Book Title",
-    "author": "Author Name",
-    "publication_year": 2024
-  }
+  "message": "User created successfully",
+  "user_id": 1,
+  "username": "newuser",
+  "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b"
 }
 ```
 
 **Example**:
 ```bash
-curl -X POST http://127.0.0.1:8000/api/books_all/ \
+curl -X POST http://127.0.0.1:8000/api/auth/register/ \
   -H "Content-Type: application/json" \
-  -d '{"title": "Test Book", "author": "Test Author", "publication_year": 2024}'
+  -d '{"username": "testuser", "password": "testpass123", "email": "test@example.com"}'
 ```
 
-### 3. Retrieve a Specific Book
-- **URL**: `GET /api/books_all/{id}/`
-- **Description**: Get details of a specific book by ID
-- **Response Format**:
+#### 2. Get Authentication Token
+- **URL**: `POST /api/auth/token/`
+- **Description**: Obtain authentication token for existing user
+- **Authentication**: Not required (public)
+- **Request Body**:
 ```json
 {
-  "id": 1,
-  "title": "The Django Book",
-  "author": "Adrian Holovaty",
-  "publication_year": 2009
+  "username": "existinguser",
+  "password": "userpassword"
+}
+```
+- **Response**:
+```json
+{
+  "token": "9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b",
+  "user_id": 1,
+  "username": "existinguser",
+  "email": "user@example.com",
+  "message": "Authentication successful"
 }
 ```
 
 **Example**:
 ```bash
-curl -X GET http://127.0.0.1:8000/api/books_all/1/
-```
-
-### 4. Update a Book (Full Update)
-- **URL**: `PUT /api/books_all/{id}/`
-- **Description**: Update all fields of a specific book
-- **Request Body**: All fields required
-```json
-{
-  "title": "Updated Book Title",
-  "author": "Updated Author",
-  "publication_year": 2024
-}
-```
-- **Response Format**:
-```json
-{
-  "message": "Book updated successfully",
-  "data": {
-    "id": 1,
-    "title": "Updated Book Title",
-    "author": "Updated Author",
-    "publication_year": 2024
-  }
-}
-```
-
-**Example**:
-```bash
-curl -X PUT http://127.0.0.1:8000/api/books_all/1/ \
+curl -X POST http://127.0.0.1:8000/api/auth/token/ \
   -H "Content-Type: application/json" \
-  -d '{"title": "Updated Title", "author": "Updated Author", "publication_year": 2024}'
+  -d '{"username": "testuser", "password": "testpass123"}'
 ```
 
-### 5. Partial Update a Book
-- **URL**: `PATCH /api/books_all/{id}/`
-- **Description**: Update specific fields of a book
-- **Request Body**: Only fields to update
-```json
-{
-  "title": "New Title Only"
-}
+### Protected Endpoints (Require Authentication)
+
+All book-related endpoints now require authentication. Include the token in the `Authorization` header:
+
 ```
-- **Response Format**:
-```json
-{
-  "message": "Book partially updated successfully",
-  "data": {
-    "id": 1,
-    "title": "New Title Only",
-    "author": "Original Author",
-    "publication_year": 2009
-  }
-}
+Authorization: Token 9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b
 ```
 
-**Example**:
+#### Book Endpoints
+
+| Endpoint | Method | Description | Authentication Required |
+|----------|--------|-------------|------------------------|
+| `/api/books/` | GET | List all books (ListAPIView) | ✅ Yes |
+| `/api/books_all/` | GET | List all books (ViewSet) | ✅ Yes |
+| `/api/books_all/` | POST | Create new book | ✅ Yes |
+| `/api/books_all/{id}/` | GET | Get specific book | ✅ Yes |
+| `/api/books_all/{id}/` | PUT | Update book (full) | ✅ Yes |
+| `/api/books_all/{id}/` | PATCH | Update book (partial) | ✅ Yes |
+| `/api/books_all/{id}/` | DELETE | Delete book | ✅ Yes |
+
+### Public Endpoints (No Authentication Required)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/` | GET | API overview |
+| `/api/books-public/` | GET | Public book list (for testing) |
+| `/api/auth/register/` | POST | User registration |
+| `/api/auth/token/` | POST | Get authentication token |
+
+## Usage Examples
+
+### 1. Complete Authentication Flow
+
 ```bash
-curl -X PATCH http://127.0.0.1:8000/api/books_all/1/ \
+# Step 1: Register a new user
+curl -X POST http://127.0.0.1:8000/api/auth/register/ \
   -H "Content-Type: application/json" \
-  -d '{"title": "Partially Updated Title"}'
-```
+  -d '{"username": "apiuser", "password": "securepass123", "email": "api@example.com"}'
 
-### 6. Delete a Book
-- **URL**: `DELETE /api/books_all/{id}/`
-- **Description**: Delete a specific book
-- **Response Format**:
-```json
-{
-  "message": "Book \"Book Title\" deleted successfully"
-}
-```
+# Response will include a token, or get token separately:
+curl -X POST http://127.0.0.1:8000/api/auth/token/ \
+  -H "Content-Type: application/json" \
+  -d '{"username": "apiuser", "password": "securepass123"}'
 
-**Example**:
-```bash
-curl -X DELETE http://127.0.0.1:8000/api/books_all/1/
-```
+# Step 2: Use token to access protected endpoints
+TOKEN="your_token_here"
 
-## Error Handling
-
-The API provides comprehensive error handling:
-
-### Common Error Responses
-
-**404 Not Found**:
-```json
-{
-  "error": "Book not found"
-}
-```
-
-**400 Bad Request** (Validation Error):
-```json
-{
-  "error": "Validation failed",
-  "details": {
-    "title": ["This field is required."],
-    "publication_year": ["Publication year cannot be in the future."]
-  }
-}
-```
-
-**500 Internal Server Error**:
-```json
-{
-  "error": "Failed to create book",
-  "details": "Specific error message"
-}
-```
-
-## Testing Methods
-
-### Using curl (Command Line)
-```bash
-# List all books
-curl -X GET http://127.0.0.1:8000/api/books_all/
+# List books
+curl -X GET http://127.0.0.1:8000/api/books_all/ \
+  -H "Authorization: Token $TOKEN"
 
 # Create a book
 curl -X POST http://127.0.0.1:8000/api/books_all/ \
+  -H "Authorization: Token $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title": "Test", "author": "Author", "publication_year": 2024}'
-
-# Get specific book
-curl -X GET http://127.0.0.1:8000/api/books_all/1/
-
-# Update book
-curl -X PUT http://127.0.0.1:8000/api/books_all/1/ \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Updated", "author": "Updated Author", "publication_year": 2024}'
-
-# Partial update
-curl -X PATCH http://127.0.0.1:8000/api/books_all/1/ \
-  -H "Content-Type: application/json" \
-  -d '{"title": "New Title"}'
-
-# Delete book
-curl -X DELETE http://127.0.0.1:8000/api/books_all/1/
+  -d '{"title": "Authenticated Book", "author": "API User", "publication_year": 2024}'
 ```
 
-### Using Python requests
+### 2. Python requests Example
+
 ```python
 import requests
-import json
 
-base_url = "http://127.0.0.1:8000/api/books_all/"
+base_url = "http://127.0.0.1:8000/api"
 
-# List all books
-response = requests.get(base_url)
-print(response.json())
+# Step 1: Register or get token
+auth_data = {
+    "username": "apiuser",
+    "password": "securepass123"
+}
+
+# Get token
+response = requests.post(f"{base_url}/auth/token/", json=auth_data)
+token_data = response.json()
+token = token_data['token']
+
+# Step 2: Set up headers with token
+headers = {
+    'Authorization': f'Token {token}',
+    'Content-Type': 'application/json'
+}
+
+# Step 3: Make authenticated requests
+# List books
+response = requests.get(f"{base_url}/books_all/", headers=headers)
+books = response.json()
+print(books)
 
 # Create a book
 new_book = {
     "title": "Python API Book",
-    "author": "API Author",
+    "author": "Python Developer",
     "publication_year": 2024
 }
-response = requests.post(base_url, json=new_book)
-print(response.json())
+response = requests.post(f"{base_url}/books_all/", json=new_book, headers=headers)
+created_book = response.json()
+print(created_book)
+```
 
-# Get specific book (assuming ID 1)
-response = requests.get(f"{base_url}1/")
-print(response.json())
+### 3. JavaScript/Fetch Example
 
-# Update book
-updated_book = {
-    "title": "Updated Python Book",
-    "author": "Updated Author",
-    "publication_year": 2024
+```javascript
+const baseUrl = 'http://127.0.0.1:8000/api';
+
+// Get authentication token
+async function getToken(username, password) {
+    const response = await fetch(`${baseUrl}/auth/token/`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password })
+    });
+    
+    const data = await response.json();
+    return data.token;
 }
-response = requests.put(f"{base_url}1/", json=updated_book)
-print(response.json())
 
-# Partial update
-partial_update = {"title": "Partially Updated Title"}
-response = requests.patch(f"{base_url}1/", json=partial_update)
-print(response.json())
+// Make authenticated API calls
+async function fetchBooks(token) {
+    const response = await fetch(`${baseUrl}/books_all/`, {
+        headers: {
+            'Authorization': `Token ${token}`,
+        }
+    });
+    
+    return await response.json();
+}
 
-# Delete book
-response = requests.delete(f"{base_url}1/")
-print(response.status_code)  # Should be 204
+// Usage
+(async () => {
+    const token = await getToken('apiuser', 'securepass123');
+    const books = await fetchBooks(token);
+    console.log(books);
+})();
 ```
 
-### Using Browser (for GET requests)
-- List all books: `http://127.0.0.1:8000/api/books_all/`
-- Get specific book: `http://127.0.0.1:8000/api/books_all/1/`
-- API overview: `http://127.0.0.1:8000/api/`
+## Error Handling
 
-## Project Structure
+### Authentication Errors
 
+**401 Unauthorized** - Invalid or missing token:
+```json
+{
+    "detail": "Invalid token."
+}
 ```
-api_project/
-├── api/
-│   ├── __init__.py
-│   ├── models.py              # Book model definition
-│   ├── serializers.py         # BookSerializer
-│   ├── views.py              # BookList + BookViewSet (UPDATED)
-│   ├── urls.py               # Router configuration (UPDATED)
-│   └── admin.py
-├── api_project/
-│   ├── settings.py           # Updated with rest_framework
-│   ├── urls.py              # Updated to include api.urls
-│   └── ...
-├── manage.py
-├── test_crud_api.sh         # CRUD testing script
-├── create_sample_books_crud.py # Enhanced sample data
-└── CRUD_API_README.md       # This documentation
+
+**401 Unauthorized** - No token provided:
+```json
+{
+    "detail": "Authentication credentials were not provided."
+}
+```
+
+**400 Bad Request** - Invalid login credentials:
+```json
+{
+    "error": "Invalid credentials",
+    "details": {
+        "non_field_errors": ["Unable to log in with provided credentials."]
+    }
+}
+```
+
+### Permission Errors
+
+**403 Forbidden** - Insufficient permissions:
+```json
+{
+    "detail": "You do not have permission to perform this action."
+}
+```
+
+## Security Best Practices
+
+### Token Management
+1. **Store tokens securely** - Never expose tokens in client-side code
+2. **Use HTTPS in production** - Tokens should never be transmitted over HTTP
+3. **Implement token rotation** - Consider implementing token refresh mechanisms
+4. **Set token expiration** - Configure token expiration in production
+
+### API Security
+1. **Rate limiting** - Implement rate limiting to prevent abuse
+2. **CORS configuration** - Configure CORS properly for web applications
+3. **Input validation** - All input is validated through DRF serializers
+4. **Error handling** - Sensitive information is not exposed in error messages
+
+## Testing Authentication
+
+### Using the Test Script
+```bash
+# Run all authentication tests
+./test_auth_api.sh --run
+
+# Create a test superuser
+./test_auth_api.sh --create-superuser
+
+# Show help
+./test_auth_api.sh --help
+```
+
+### Manual Testing Checklist
+
+1. ✅ **Public endpoints work without authentication**
+   - GET /api/ (API overview)
+   - GET /api/books-public/ (public book list)
+
+2. ✅ **User registration works**
+   - POST /api/auth/register/ creates user and returns token
+
+3. ✅ **Token authentication works**
+   - POST /api/auth/token/ returns token for valid credentials
+
+4. ✅ **Protected endpoints reject unauthenticated requests**
+   - GET /api/books/ returns 401 without token
+
+5. ✅ **Protected endpoints accept authenticated requests**
+   - GET /api/books/ returns data with valid token
+
+6. ✅ **CRUD operations work with authentication**
+   - All ViewSet operations require and accept valid tokens
+
+## User Management
+
+### Create Test Users
+```bash
+python manage_users.py create
+```
+
+### List All Users
+```bash
+python manage_users.py list
+```
+
+### Delete Test Users
+```bash
+python manage_users.py delete
+```
+
+## Configuration Details
+
+### Settings Configuration
+```python
+# In api_project/settings.py
+INSTALLED_APPS = [
+    # ... other apps
+    'rest_framework',
+    'rest_framework.authtoken',  # Required for token authentication
+    'api',
+]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+}
+```
+
+### View-Level Permissions
+```python
+# Different permission classes can be applied per view
+class BookViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]  # Requires authentication
+    
+class PublicBookView(generics.ListAPIView):
+    permission_classes = [AllowAny]  # Public access
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **404 Error on ViewSet endpoints**
-   - Ensure the router is properly configured in `urls.py`
-   - Check that `DefaultRouter` is imported and registered correctly
+1. **Token not working**
+   - Verify token format: `Authorization: Token your_token_here`
+   - Check that `rest_framework.authtoken` is in INSTALLED_APPS
+   - Ensure migrations have been run
 
-2. **405 Method Not Allowed**
-   - Verify you're using the correct HTTP method for the operation
-   - Check that the ViewSet supports the method you're trying to use
+2. **403 Forbidden errors**
+   - Check that user has necessary permissions
+   - Verify permission classes are correctly configured
 
-3. **400 Bad Request on POST/PUT**
-   - Verify your JSON data format matches the serializer requirements
-   - Check that all required fields are included
-   - Ensure `Content-Type: application/json` header is set
+3. **User registration fails**
+   - Check that username is unique
+   - Verify password meets any requirements
+   - Ensure all required fields are provided
 
-4. **500 Internal Server Error**
-   - Check Django server logs for detailed error information
-   - Verify database migrations are applied
-   - Ensure all required dependencies are installed
-
-### Validation Rules
-
-The API enforces these validation rules:
-- **Title**: Cannot be empty or whitespace only
-- **Publication Year**: Cannot be in the future
-- **All fields**: Required for full updates (PUT)
+4. **Token not generated**
+   - Run migrations: `python manage.py migrate`
+   - Check that Token model is available
 
 ## Next Steps
 
-- Add authentication and permissions
-- Implement filtering, searching, and pagination
-- Add more complex validation rules
-- Write comprehensive unit tests
-- Add API documentation with Swagger/OpenAPI
-- Implement rate limiting
-- Add caching for better performance
+- Implement token refresh mechanism
+- Add role-based permissions
+- Implement API rate limiting
+- Add OAuth2 authentication
+- Set up HTTPS for production
+- Implement audit logging
+- Add API versioning
 EOF
 
-print_status "✓ Created CRUD_API_README.md with comprehensive documentation"
+print_status "✓ Created AUTH_API_README.md with comprehensive authentication documentation"
 
-# Step 6: Create a quick validation script
-print_header "Step 6: Creating validation script"
-cat > validate_crud_setup.py << 'EOF'
+# Step 8: Create validation script
+print_header "Step 8: Creating Authentication Validation Script"
+cat > validate_auth_setup.py << 'EOF'
 #!/usr/bin/env python
 """
-Script to validate that the CRUD setup is working correctly.
-This script checks the Django configuration and ViewSet setup.
+Script to validate that the authentication setup is working correctly.
+This script checks Django configuration, authentication views, and permissions.
 """
 
 import os
@@ -1005,38 +1361,71 @@ try:
     # Test imports
     from api.models import Book
     from api.serializers import BookSerializer
-    from api.views import BookViewSet, BookList
+    from api.views import BookViewSet, BookList, CustomAuthToken
     from rest_framework.routers import DefaultRouter
+    from rest_framework.authtoken.models import Token
+    from django.contrib.auth.models import User
+    from django.conf import settings
     
     print("✓ All imports successful")
     
-    # Test ViewSet configuration
+    # Test authentication configuration
+    rest_config = getattr(settings, 'REST_FRAMEWORK', {})
+    auth_classes = rest_config.get('DEFAULT_AUTHENTICATION_CLASSES', [])
+    perm_classes = rest_config.get('DEFAULT_PERMISSION_CLASSES', [])
+    
+    print(f"✓ REST_FRAMEWORK configuration found")
+    print(f"  - Authentication classes: {len(auth_classes)}")
+    for auth_class in auth_classes:
+        print(f"    * {auth_class}")
+    print(f"  - Permission classes: {len(perm_classes)}")
+    for perm_class in perm_classes:
+        print(f"    * {perm_class}")
+    
+    # Check if authtoken is in INSTALLED_APPS
+    installed_apps = getattr(settings, 'INSTALLED_APPS', [])
+    if 'rest_framework.authtoken' in installed_apps:
+        print("✓ rest_framework.authtoken is in INSTALLED_APPS")
+    else:
+        print("❌ rest_framework.authtoken is NOT in INSTALLED_APPS")
+    
+    # Test ViewSet permissions
     viewset = BookViewSet()
     print(f"✓ BookViewSet created successfully")
-    print(f"  - Queryset: {viewset.queryset.model.__name__}")
-    print(f"  - Serializer: {viewset.serializer_class.__name__}")
+    print(f"  - Permission classes: {[cls.__name__ for cls in viewset.permission_classes]}")
     
-    # Test Router
-    router = DefaultRouter()
-    router.register(r'books_all', BookViewSet, basename='book_all')
-    urls = router.get_urls()
-    print(f"✓ Router configured successfully")
-    print(f"  - Generated {len(urls)} URL patterns")
+    # Test authentication view
+    auth_view = CustomAuthToken()
+    print(f"✓ CustomAuthToken view created successfully")
     
-    # List some of the generated URLs
-    print("  - Generated URL patterns:")
-    for url in urls[:6]:  # Show first 6 patterns
-        print(f"    * {url.pattern}")
+    # Test database tables
+    try:
+        user_count = User.objects.count()
+        token_count = Token.objects.count()
+        book_count = Book.objects.count()
+        
+        print(f"✓ Database connection successful")
+        print(f"  - Users: {user_count}")
+        print(f"  - Tokens: {token_count}")
+        print(f"  - Books: {book_count}")
+    except Exception as e:
+        print(f"❌ Database error: {e}")
     
-    # Test database connection
-    book_count = Book.objects.count()
-    print(f"✓ Database connection successful")
-    print(f"  - Current book count: {book_count}")
+    # Test URL configuration
+    from django.urls import reverse
+    try:
+        token_url = reverse('api_token_auth')
+        register_url = reverse('api_register')
+        print(f"✓ URL configuration successful")
+        print(f"  - Token URL: {token_url}")
+        print(f"  - Register URL: {register_url}")
+    except Exception as e:
+        print(f"❌ URL configuration error: {e}")
     
-    print("\n" + "="*50)
-    print("✅ CRUD setup validation completed successfully!")
-    print("Your Django REST Framework CRUD API is ready to use.")
-    print("="*50)
+    print("\n" + "="*60)
+    print("✅ Authentication setup validation completed successfully!")
+    print("Your Django REST Framework API is secured with authentication.")
+    print("="*60)
     
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -1047,34 +1436,47 @@ except Exception as e:
     sys.exit(1)
 EOF
 
-print_status "✓ Created validate_crud_setup.py for setup validation"
+print_status "✓ Created validate_auth_setup.py for authentication validation"
 
 # Final summary
-print_header "CRUD ViewSet Setup Complete!"
-echo "============================="
+print_header "Authentication & Permissions Setup Complete!"
+echo "=============================================="
 print_status "All files have been created and updated successfully!"
 echo ""
 echo "Files created/updated:"
-echo "  ✓ api/views.py - Added BookViewSet with full CRUD operations"
-echo "  ✓ api/urls.py - Updated with DefaultRouter configuration"
-echo "  ✓ test_crud_api.sh - Comprehensive CRUD testing script"
-echo "  ✓ create_sample_books_crud.py - Enhanced sample data script"
-echo "  ✓ CRUD_API_README.md - Complete CRUD API documentation"
-echo "  ✓ validate_crud_setup.py - Setup validation script"
+echo "  ✓ api_project/settings.py - Added authentication configuration"
+echo "  ✓ api/views.py - Added authentication views and permissions"
+echo "  ✓ api/urls.py - Added authentication endpoints"
+echo "  ✓ test_auth_api.sh - Authentication testing script"
+echo "  ✓ manage_users.py - User management utilities"
+echo "  ✓ AUTH_API_README.md - Complete authentication documentation"
+echo "  ✓ validate_auth_setup.py - Authentication validation script"
 echo ""
-echo "Available API Endpoints:"
-echo "  📖 GET    /api/books_all/     - List all books"
-echo "  ➕ POST   /api/books_all/     - Create a new book"
+echo "Authentication Endpoints:"
+echo "  🔐 POST /api/auth/register/  - User registration"
+echo "  🔑 POST /api/auth/token/     - Get authentication token"
+echo ""
+echo "Protected Endpoints (require token):"
+echo "  📚 GET    /api/books/         - List books (ListAPIView)"
+echo "  📖 GET    /api/books_all/     - List books (ViewSet)"
+echo "  ➕ POST   /api/books_all/     - Create book"
 echo "  📄 GET    /api/books_all/{id}/ - Get specific book"
 echo "  ✏️  PUT    /api/books_all/{id}/ - Update book (full)"
 echo "  🔧 PATCH  /api/books_all/{id}/ - Update book (partial)"
 echo "  🗑️  DELETE /api/books_all/{id}/ - Delete book"
 echo ""
-echo "Next steps:"
-echo "1. Validate setup: python validate_crud_setup.py"
-echo "2. Create sample data: python create_sample_books_crud.py"
-echo "3. Start server: python manage.py runserver"
-echo "4. Test CRUD operations: ./test_crud_api.sh --run"
+echo "Public Endpoints (no authentication):"
+echo "  🌐 GET /api/                 - API overview"
+echo "  📚 GET /api/books-public/    - Public book list"
 echo ""
-print_status "Your Django REST Framework CRUD API with ViewSets is ready!"
-print_warning "Remember: The original /api/books/ endpoint still works alongside the new CRUD endpoints!"
+echo "Next steps:"
+echo "1. Validate setup: python validate_auth_setup.py"
+echo "2. Create test users: python manage_users.py create"
+echo "3. Start server: python manage.py runserver"
+echo "4. Test authentication: ./test_auth_api.sh --run"
+echo ""
+echo "Token Usage:"
+echo "Include in headers: Authorization: Token YOUR_TOKEN_HERE"
+echo ""
+print_status "Your Django REST Framework API is now secured with authentication!"
+print_warning "Remember: All book endpoints now require authentication tokens!"

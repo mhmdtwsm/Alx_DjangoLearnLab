@@ -1,52 +1,19 @@
 from rest_framework import generics, status, viewsets
 from rest_framework.response import Response
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, AllowAny
-from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.authtoken.models import Token
-from django.contrib.auth.models import User
+from rest_framework.decorators import api_view
 from django.http import JsonResponse
 from .models import Book
 from .serializers import BookSerializer
 
 
-class CustomAuthToken(ObtainAuthToken):
-    """
-    Custom authentication token view that returns user information along with the token.
-    
-    POST /api/auth/token/ - Get authentication token
-    Body: {"username": "your_username", "password": "your_password"}
-    """
-    
-    def post(self, request, *args, **kwargs):
-        serializer = self.serializer_class(data=request.data,
-                                           context={'request': request})
-        if serializer.is_valid():
-            user = serializer.validated_data['user']
-            token, created = Token.objects.get_or_create(user=user)
-            return Response({
-                'token': token.key,
-                'user_id': user.pk,
-                'username': user.username,
-                'email': user.email,
-                'message': 'Authentication successful'
-            })
-        return Response({
-            'error': 'Invalid credentials',
-            'details': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-
 class BookList(generics.ListAPIView):
     """
     API view to retrieve list of books.
-    Requires authentication to access.
     
     GET /api/books/ - Returns a list of all books in JSON format
     """
     queryset = Book.objects.all()
     serializer_class = BookSerializer
-    permission_classes = [IsAuthenticated]  # Requires authentication
     
     def get(self, request, *args, **kwargs):
         """
@@ -63,37 +30,18 @@ class BookList(generics.ListAPIView):
 
 class BookViewSet(viewsets.ModelViewSet):
     """
-    A ViewSet for handling all CRUD operations on Book model with authentication.
-    
-    Permissions:
-    - List/Retrieve: Authenticated users can read
-    - Create/Update/Delete: Authenticated users can modify
+    A ViewSet for handling all CRUD operations on Book model.
     
     This ViewSet automatically provides the following endpoints:
-    - GET /books_all/ - List all books (requires authentication)
-    - POST /books_all/ - Create a new book (requires authentication)
-    - GET /books_all/{id}/ - Retrieve a specific book (requires authentication)
-    - PUT /books_all/{id}/ - Update a specific book (requires authentication)
-    - PATCH /books_all/{id}/ - Partially update a specific book (requires authentication)
-    - DELETE /books_all/{id}/ - Delete a specific book (requires authentication)
+    - GET /books_all/ - List all books
+    - POST /books_all/ - Create a new book
+    - GET /books_all/{id}/ - Retrieve a specific book
+    - PUT /books_all/{id}/ - Update a specific book
+    - PATCH /books_all/{id}/ - Partially update a specific book
+    - DELETE /books_all/{id}/ - Delete a specific book
     """
     queryset = Book.objects.all()
     serializer_class = BookSerializer
-    permission_classes = [IsAuthenticated]  # All operations require authentication
-    
-    def get_permissions(self):
-        """
-        Instantiate and return the list of permissions that this view requires.
-        You can customize permissions per action if needed.
-        """
-        if self.action in ['list', 'retrieve']:
-            # Read operations - authenticated users only
-            permission_classes = [IsAuthenticated]
-        else:
-            # Write operations - authenticated users only
-            permission_classes = [IsAuthenticated]
-        
-        return [permission() for permission in permission_classes]
     
     def list(self, request):
         """
@@ -105,9 +53,7 @@ class BookViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(queryset, many=True)
             return Response({
                 'count': queryset.count(),
-                'results': serializer.data,
-                'user': request.user.username,
-                'message': 'Books retrieved successfully'
+                'results': serializer.data
             })
         except Exception as e:
             return Response(
@@ -127,8 +73,7 @@ class BookViewSet(viewsets.ModelViewSet):
                 return Response(
                     {
                         'message': 'Book created successfully',
-                        'data': serializer.data,
-                        'created_by': request.user.username
+                        'data': serializer.data
                     }, 
                     status=status.HTTP_201_CREATED
                 )
@@ -153,10 +98,7 @@ class BookViewSet(viewsets.ModelViewSet):
         try:
             instance = self.get_object()
             serializer = self.get_serializer(instance)
-            return Response({
-                'data': serializer.data,
-                'accessed_by': request.user.username
-            })
+            return Response(serializer.data)
         except Book.DoesNotExist:
             return Response(
                 {"error": "Book not found"}, 
@@ -181,8 +123,7 @@ class BookViewSet(viewsets.ModelViewSet):
                 return Response(
                     {
                         'message': 'Book updated successfully',
-                        'data': serializer.data,
-                        'updated_by': request.user.username
+                        'data': serializer.data
                     }
                 )
             return Response(
@@ -216,8 +157,7 @@ class BookViewSet(viewsets.ModelViewSet):
                 return Response(
                     {
                         'message': 'Book partially updated successfully',
-                        'data': serializer.data,
-                        'updated_by': request.user.username
+                        'data': serializer.data
                     }
                 )
             return Response(
@@ -249,8 +189,7 @@ class BookViewSet(viewsets.ModelViewSet):
             self.perform_destroy(instance)
             return Response(
                 {
-                    'message': f'Book "{book_title}" deleted successfully',
-                    'deleted_by': request.user.username
+                    'message': f'Book "{book_title}" deleted successfully'
                 }, 
                 status=status.HTTP_204_NO_CONTENT
             )
@@ -267,93 +206,32 @@ class BookViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])  # Public endpoint for testing
 def book_list_function_view(request):
     """
     Alternative function-based view for listing books.
-    This endpoint is public (no authentication required) for testing purposes.
+    This is an example of how you could implement the same functionality
+    using a function-based view instead of a class-based view.
     """
     if request.method == 'GET':
         books = Book.objects.all()
         serializer = BookSerializer(books, many=True)
-        return Response({
-            'data': serializer.data,
-            'message': 'Public endpoint - no authentication required'
-        })
+        return Response(serializer.data)
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])  # Public endpoint
 def api_overview(request):
     """
-    API overview endpoint - publicly accessible.
+    Simple view to provide API documentation/overview.
     """
     api_urls = {
-        'Authentication': {
-            'Get Token': 'POST /api/auth/token/ (username, password)',
-            'Usage': 'Include "Authorization: Token your_token_here" in headers',
+        'List Books (ListAPIView)': '/api/books/',
+        'CRUD Operations (ViewSet)': {
+            'List all books': 'GET /api/books_all/',
+            'Create book': 'POST /api/books_all/',
+            'Get book by ID': 'GET /api/books_all/{id}/',
+            'Update book': 'PUT /api/books_all/{id}/',
+            'Partial update': 'PATCH /api/books_all/{id}/',
+            'Delete book': 'DELETE /api/books_all/{id}/',
         },
-        'Books API (Authenticated)': {
-            'List Books (ListAPIView)': 'GET /api/books/',
-            'CRUD Operations (ViewSet)': {
-                'List all books': 'GET /api/books_all/',
-                'Create book': 'POST /api/books_all/',
-                'Get book by ID': 'GET /api/books_all/{id}/',
-                'Update book': 'PUT /api/books_all/{id}/',
-                'Partial update': 'PATCH /api/books_all/{id}/',
-                'Delete book': 'DELETE /api/books_all/{id}/',
-            },
-        },
-        'Public Endpoints': {
-            'API Overview': 'GET /api/',
-            'Public Book List': 'GET /api/books-public/',
-        },
+        'API Overview': '/api/',
     }
     return JsonResponse(api_urls)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])  # Public endpoint for user registration
-def register_user(request):
-    """
-    User registration endpoint.
-    POST /api/auth/register/
-    Body: {"username": "new_user", "password": "password", "email": "email@example.com"}
-    """
-    try:
-        username = request.data.get('username')
-        password = request.data.get('password')
-        email = request.data.get('email', '')
-        
-        if not username or not password:
-            return Response({
-                'error': 'Username and password are required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        if User.objects.filter(username=username).exists():
-            return Response({
-                'error': 'Username already exists'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Create user
-        user = User.objects.create_user(
-            username=username,
-            password=password,
-            email=email
-        )
-        
-        # Create token for the new user
-        token, created = Token.objects.get_or_create(user=user)
-        
-        return Response({
-            'message': 'User created successfully',
-            'user_id': user.pk,
-            'username': user.username,
-            'token': token.key
-        }, status=status.HTTP_201_CREATED)
-        
-    except Exception as e:
-        return Response({
-            'error': 'Failed to create user',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
