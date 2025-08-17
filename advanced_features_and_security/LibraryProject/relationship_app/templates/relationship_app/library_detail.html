@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Library Detail</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        h1, h2 { color: #0056b3; }
+        ul { list-style-type: none; padding: 0; }
+        li { background-color: #fff; border: 1px solid #ddd; margin-bottom: 5px; padding: 10px; border-radius: 5px; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <a href="{% url 'list_books' %}">Back to Books</a>
+    <h1>Library: {{ library.name }}</h1>
+    <h2>Books in Library:</h2>
+    <ul>
+        {% for book in library.books.all %}
+        <li>{{ book.title }} by {{ book.author.name }} (Published {{ book.publication_year }})</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

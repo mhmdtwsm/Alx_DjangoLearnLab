@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Member Dashboard</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #fff3cd; color: #333; }
+        h1 { color: #856404; }
+        p { background-color: #ffeeba; border: 1px solid #ffc107; padding: 15px; border-radius: 5px; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>Welcome, Member!</h1>
+    <p>This is the dashboard for members.</p>
+    <a href="{% url 'home' %}">Back to Home</a> | <a href="{% url 'logout' %}">Logout</a>
+</body>
+</html>
