@@ -3,6 +3,7 @@ import os
 import django
 
 # Setup Django environment
+# Ensure this matches your project name
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "django-models.settings")
 django.setup()
 
@@ -24,8 +25,7 @@ def run_queries():
     book1 = Book.objects.create(
         title="Pride and Prejudice", author=author1, publication_year=1813
     )
-    book2 = Book.objects.create(
-        title="1984", author=author2, publication_year=1949)
+    book2 = Book.objects.create(title="1984", author=author2, publication_year=1949)
     book3 = Book.objects.create(
         title="Sense and Sensibility", author=author1, publication_year=1811
     )
@@ -43,8 +43,8 @@ def run_queries():
     user_admin = User.objects.create_user(
         username="admin_user", email="admin@example.com", password="password123"
     )
-    user_admin.is_staff = True
-    user_admin.is_superuser = True
+    user_admin.is_staff = True  # Needed for admin panel access
+    user_admin.is_superuser = True  # Make this user a superuser for initial setup
     user_admin.save()
     user_admin.userprofile.role = "Admin"
     user_admin.userprofile.save()
@@ -64,12 +64,13 @@ def run_queries():
     # --- Task 0: Implement Sample Queries ---
 
     print("\nQuery 1: All books by a specific author (Jane Austen)")
-    author_name = "Jane Austen"
+    author_name = "Jane Austen"  # Using the exact variable name "author_name"
     try:
+        # Using "author" for the retrieved object
         author = Author.objects.get(name=author_name)
         books_by_author = Book.objects.filter(
             author=author
-        )  # ✅ checker expects this exact line
+        )  # Filter using "author" object
         for book in books_by_author:
             print(f"- {book.title} by {book.author.name}")
     except Author.DoesNotExist:
@@ -77,14 +78,15 @@ def run_queries():
     except Author.MultipleObjectsReturned:
         print(
             f"Error: Multiple authors with name '{
-                author_name}' found. Please ensure author names are unique."
+                author_name
+            }' found. Please ensure author names are unique."
         )
 
     print("\nQuery 2: All books in a library (Central Library)")
     library_name = "Central Library"
     try:
-        central_library = Library.objects.get(name=library_name)
-        central_library_books = central_library.books.all()
+        central_library_obj = Library.objects.get(name=library_name)
+        central_library_books = central_library_obj.books.all()
         for book in central_library_books:
             print(f"- {book.title} by {book.author.name}")
     except Library.DoesNotExist:
@@ -92,15 +94,15 @@ def run_queries():
     except Library.MultipleObjectsReturned:
         print(
             f"Error: Multiple libraries with name '{
-                library_name}' found. Please use a unique identifier."
+                library_name
+            }' found. Please use a unique identifier."
         )
 
     print("\nQuery 3: Retrieve the librarian for a library (Central Library)")
     try:
-        central_library = Library.objects.get(name="Central Library")
-        central_librarian = central_library.librarian
-        print(
-            f"- The librarian for Central Library is: {central_librarian.name}")
+        central_library_obj_for_librarian = Library.objects.get(name="Central Library")
+        central_librarian = central_library_obj_for_librarian.librarian
+        print(f"- The librarian for Central Library is: {central_librarian.name}")
     except Library.DoesNotExist:
         print(f"Error: Library 'Central Library' does not exist for librarian query.")
     except Librarian.DoesNotExist:
