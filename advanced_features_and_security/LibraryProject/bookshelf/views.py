@@ -9,68 +9,13 @@ from django.utils.html import escape
 from django.core.exceptions import ValidationError
 import logging
 
-# Import your models and forms - INCLUDING ExampleForm
+# Import your models and forms
 from .models import Book
-from .forms import (
-    BookSearchForm,
-    SecureBookForm,
-    SecureCommentForm,
-    ExampleForm,
-    SecureContactForm,
-    SecureUserRegistrationForm,
-)
+from .forms import BookSearchForm, SecureBookForm, SecureCommentForm
+from .forms import ExampleForm
 
 # Set up security logging
 security_logger = logging.getLogger("django.security")
-
-
-@csrf_protect
-@require_http_methods(["GET", "POST"])
-def example_form_view(request):
-    """
-    Secure view for handling ExampleForm submissions.
-    Demonstrates proper form handling with CSRF protection and validation.
-    """
-    if request.method == "POST":
-        form = ExampleForm(request.POST)
-        if form.is_valid():
-            # Process validated form data
-            name = form.cleaned_data["name"]
-            email = form.cleaned_data["email"]
-            age = form.cleaned_data.get("age")
-            message = form.cleaned_data["message"]
-            newsletter = form.cleaned_data.get("newsletter", False)
-            category = form.cleaned_data["category"]
-
-            # Log successful form submission
-            security_logger.info(f"Example form submitted by: {name} ({email})")
-
-            # Here you would typically save the data or send an email
-            # For demonstration, we'll just show a success message
-            messages.success(
-                request,
-                f"Thank you, {escape(name)}! Your {
-                    category
-                } inquiry has been received.",
-            )
-
-            # Redirect to prevent duplicate submissions
-            return redirect("example_form")
-
-        else:
-            # Log form validation failures
-            security_logger.warning(
-                f"Invalid example form submission from IP: {
-                    request.META.get('REMOTE_ADDR')
-                }"
-            )
-            messages.error(request, "Please correct the errors below.")
-    else:
-        form = ExampleForm()
-
-    context = {"form": form, "page_title": "Example Form - Security Demo"}
-
-    return render(request, "bookshelf/example_form.html", context)
 
 
 @csrf_protect
@@ -88,26 +33,14 @@ def secure_book_list(request):
         if form.is_valid():
             # Safe search using Django ORM - prevents SQL injection
             query = form.cleaned_data["query"]
-            search_type = form.cleaned_data.get("search_type", "all")
 
             # Log search attempts for security monitoring
-            security_logger.info(
-                f"Book search performed: {query} (type: {search_type})"
-            )
+            security_logger.info(f"Book search performed: {query}")
 
             # Use Django ORM's safe query methods - NO raw SQL
-            if search_type == "title":
-                books = Book.objects.filter(title__icontains=query)
-            elif search_type == "author":
-                books = Book.objects.filter(author__icontains=query)
-            elif search_type == "isbn":
-                books = Book.objects.filter(isbn__icontains=query)
-            else:  # search_type == 'all'
-                books = Book.objects.filter(
-                    Q(title__icontains=query)
-                    | Q(author__icontains=query)
-                    | Q(description__icontains=query)
-                ).distinct()
+            books = Book.objects.filter(
+                Q(title__icontains=query) | Q(author__icontains=query)
+            ).distinct()
 
             # Limit results to prevent performance issues
             books = books[:100]
@@ -152,8 +85,6 @@ def secure_book_create(request):
                     title=form.cleaned_data["title"],
                     author=form.cleaned_data["author"],
                     publication_year=form.cleaned_data["publication_year"],
-                    isbn=form.cleaned_data.get("isbn", ""),
-                    description=form.cleaned_data.get("description", ""),
                 )
 
                 # Log successful book creation
@@ -197,32 +128,19 @@ def secure_book_search(request):
     form = BookSearchForm(request.POST)
     if form.is_valid():
         query = form.cleaned_data["query"]
-        search_type = form.cleaned_data.get("search_type", "all")
 
         # Increment search counter
         request.session["search_count"] = session_searches + 1
 
-        # Safe search using ORM based on search type
-        if search_type == "title":
-            books = Book.objects.filter(title__icontains=query)
-        elif search_type == "author":
-            books = Book.objects.filter(author__icontains=query)
-        elif search_type == "isbn":
-            books = Book.objects.filter(isbn__icontains=query)
-        else:
-            books = Book.objects.filter(
-                Q(title__icontains=query)
-                | Q(author__icontains=query)
-                | Q(description__icontains=query)
-            )
-
-        books_data = books.values("title", "author", "publication_year", "isbn")[:20]
+        # Safe search using ORM
+        books = Book.objects.filter(
+            Q(title__icontains=query) | Q(author__icontains=query)
+        ).values("title", "author", "publication_year")[:20]  # Limit results
 
         return JsonResponse(
             {
-                "books": list(books_data),
+                "books": list(books),
                 "query": escape(query),  # Escape for safe display
-                "search_type": search_type,
             }
         )
 
@@ -237,24 +155,13 @@ def secure_add_comment(request):
     """
     form = SecureCommentForm(request.POST)
     if form.is_valid():
-        name = form.cleaned_data["name"]
-        email = form.cleaned_data.get("email")
         comment_text = form.cleaned_data["comment"]
-        rating = form.cleaned_data.get("rating")
 
         # Here you would save the comment to your model
-        # comment = Comment.objects.create(
-        #     name=name,
-        #     email=email,
-        #     text=comment_text,
-        #     rating=rating,
-        #     user=request.user if request.user.is_authenticated else None
-        # )
+        # comment = Comment.objects.create(text=comment_text, user=request.user)
 
-        security_logger.info(f"Comment added by: {name}")
-        messages.success(
-            request, f"Thank you, {escape(name)}! Your comment has been added."
-        )
+        security_logger.info(f"Comment added by user: {request.user}")
+        messages.success(request, "Comment added successfully!")
 
     else:
         security_logger.warning(
@@ -273,12 +180,8 @@ def secure_book_detail(request, book_id):
     # This prevents SQL injection through URL parameters
     book = get_object_or_404(Book, id=book_id)
 
-    # Initialize comment form for the detail page
-    comment_form = SecureCommentForm()
-
     context = {
         "book": book,
-        "comment_form": comment_form,
     }
 
     return render(request, "bookshelf/book_detail.html", context)
@@ -286,110 +189,31 @@ def secure_book_detail(request, book_id):
 
 @csrf_protect
 @require_http_methods(["GET", "POST"])
-def secure_contact_view(request):
+def example_form_view(request):
     """
-    Secure contact form view with comprehensive validation.
+    View for handling ExampleForm - demonstrates secure form handling.
     """
     if request.method == "POST":
-        form = SecureContactForm(request.POST)
+        form = ExampleForm(request.POST)
         if form.is_valid():
-            # Process the contact form
-            subject = form.cleaned_data["subject"]
+            # Process the validated data
             name = form.cleaned_data["name"]
             email = form.cleaned_data["email"]
-            phone = form.cleaned_data.get("phone")
             message = form.cleaned_data["message"]
 
-            # Log contact form submission
-            security_logger.info(
-                f"Contact form submitted by: {name} ({email}) - Subject: {subject}"
-            )
-
-            # Here you would typically send an email or save to database
-            # send_mail(subject, message, email, ['admin@example.com'])
+            # Log the form submission
+            security_logger.info(f"ExampleForm submitted by: {name}")
 
             messages.success(
-                request,
-                f"Thank you, {escape(name)}! Your message has been sent successfully. "
-                f"We'll respond to {escape(email)} within 24 hours.",
+                request, f"Thank you, {escape(name)}! Your form has been submitted."
             )
-
-            return redirect("secure_contact")
-
+            return redirect("example_form")
         else:
-            # Log validation failures
-            security_logger.warning(
-                f"Invalid contact form submission from IP: {
-                    request.META.get('REMOTE_ADDR')
-                }"
-            )
+            messages.error(request, "Please correct the errors below.")
     else:
-        form = SecureContactForm()
+        form = ExampleForm()
 
-    context = {"form": form, "page_title": "Contact Us - Secure Form"}
-
-    return render(request, "bookshelf/contact_form.html", context)
-
-
-@csrf_protect
-@require_http_methods(["GET", "POST"])
-def secure_user_registration(request):
-    """
-    Secure user registration view.
-    """
-    if request.method == "POST":
-        form = SecureUserRegistrationForm(request.POST)
-        if form.is_valid():
-            try:
-                user = form.save()
-                security_logger.info(f"New user registered: {user.username}")
-
-                messages.success(
-                    request,
-                    f"Welcome, {
-                        escape(user.first_name)
-                    }! Your account has been created successfully.",
-                )
-
-                return redirect("login")  # Redirect to login page
-
-            except Exception as e:
-                security_logger.error(f"Error during user registration: {str(e)}")
-                messages.error(request, "Registration failed. Please try again.")
-        else:
-            security_logger.warning(
-                f"Invalid registration attempt from IP: {
-                    request.META.get('REMOTE_ADDR')
-                }"
-            )
-    else:
-        form = SecureUserRegistrationForm()
-
-    context = {"form": form, "page_title": "Register - Create Account"}
-
-    return render(request, "registration/register.html", context)
-
-
-# Utility views for demonstration
-def security_demo_view(request):
-    """
-    View to demonstrate various security features.
-    """
-    context = {
-        "page_title": "Security Features Demo",
-        "security_features": [
-            "CSRF Protection",
-            "XSS Prevention",
-            "SQL Injection Protection",
-            "Input Validation",
-            "Rate Limiting",
-            "Security Logging",
-            "Honeypot Spam Protection",
-            "Secure Headers",
-        ],
-    }
-
-    return render(request, "bookshelf/security_demo.html", context)
+    return render(request, "bookshelf/example_form.html", {"form": form})
 
 
 # Example of what NOT to do (commented out for security):
@@ -429,37 +253,4 @@ def validate_request_headers(request):
         log_suspicious_activity(request, "Suspicious User Agent", user_agent)
         return False
 
-    return True
-
-
-def get_client_ip(request):
-    """
-    Get the client's real IP address, considering proxies.
-    """
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(",")[0]
-    else:
-        ip = request.META.get("REMOTE_ADDR")
-    return ip
-
-
-def rate_limit_check(request, limit=60, window=3600):
-    """
-    Basic rate limiting implementation.
-    In production, use django-ratelimit or similar.
-    """
-    client_ip = get_client_ip(request)
-    cache_key = f"rate_limit_{client_ip}"
-
-    # This is a simplified implementation
-    # In production, use Redis or similar for distributed rate limiting
-    from django.core.cache import cache
-
-    current_requests = cache.get(cache_key, 0)
-    if current_requests >= limit:
-        security_logger.warning(f"Rate limit exceeded for IP: {client_ip}")
-        return False
-
-    cache.set(cache_key, current_requests + 1, window)
     return True
