@@ -6,6 +6,7 @@ from .models import Book, UserProfile  # Import new models
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth import login, logout, authenticate
 from django.contrib import messages
+from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.decorators import (
     login_required,
     user_passes_test,
@@ -39,10 +40,12 @@ def register_view(request):
         if form.is_valid():
             user = form.save()
             # Automatically create UserProfile via signal
-            messages.success(request, "Registration successful! You can now log in.")
+            messages.success(
+                request, "Registration successful! You can now log in.")
             return redirect("login")
         else:
-            messages.error(request, "Registration failed. Please correct the errors.")
+            messages.error(
+                request, "Registration failed. Please correct the errors.")
     else:
         form = UserCreationForm()
     return render(request, "relationship_app/register.html", {"form": form})
