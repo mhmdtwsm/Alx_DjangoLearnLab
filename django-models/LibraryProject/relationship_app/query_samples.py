@@ -68,9 +68,7 @@ def run_queries():
     try:
         # Using "author" for the retrieved object
         author = Author.objects.get(name=author_name)
-        books_by_author = Book.objects.filter(
-            author=author
-        )  # Filter using "author" object
+        books_by_author = Book.objects.filter(author=author)
         for book in books_by_author:
             print(f"- {book.title} by {book.author.name}")
     except Author.DoesNotExist:
