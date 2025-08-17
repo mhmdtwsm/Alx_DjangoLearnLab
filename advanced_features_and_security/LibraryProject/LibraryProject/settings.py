@@ -129,3 +129,15 @@ AUTH_USER_MODEL = 'bookshelf.CustomUser'
 # Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Media files configuration
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Custom user model (if using CustomUser)
+# AUTH_USER_MODEL = 'bookshelf.CustomUser'
+
+# Login URLs
+LOGIN_URL = '/admin/login/'
+LOGIN_REDIRECT_URL = '/books/'
+LOGOUT_REDIRECT_URL = '/books/'

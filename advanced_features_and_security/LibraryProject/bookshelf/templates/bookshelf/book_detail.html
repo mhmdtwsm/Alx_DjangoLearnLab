@@ -1,0 +1,35 @@
+{% extends 'bookshelf/base.html' %}
+
+{% block title %}{{ book.title }} - Library Management{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-4">
+        {% if book.cover %}
+            <img src="{{ book.cover.url }}" class="img-fluid rounded" alt="{{ book.title }}">
+        {% else %}
+            <div class="bg-light p-5 text-center rounded">
+                <p class="text-muted">No cover available</p>
+            </div>
+        {% endif %}
+    </div>
+    <div class="col-md-8">
+        <h2>{{ book.title }}</h2>
+        <p><strong>Author:</strong> {{ book.author }}</p>
+        <p><strong>Publication Year:</strong> {{ book.publication_year }}</p>
+        <p><strong>ISBN:</strong> {{ book.isbn }}</p>
+        <p><strong>Pages:</strong> {{ book.pages }}</p>
+        <p><strong>Language:</strong> {{ book.language }}</p>
+        
+        <div class="mt-4">
+            <a href="{% url 'book_list' %}" class="btn btn-secondary">Back to List</a>
+            {% if perms.bookshelf.can_edit %}
+                <a href="{% url 'book_edit' book.pk %}" class="btn btn-primary">Edit</a>
+            {% endif %}
+            {% if perms.bookshelf.can_delete %}
+                <a href="{% url 'book_delete' book.pk %}" class="btn btn-danger">Delete</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

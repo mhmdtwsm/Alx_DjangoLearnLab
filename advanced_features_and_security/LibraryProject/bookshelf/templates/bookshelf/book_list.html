@@ -1,0 +1,47 @@
+{% extends 'bookshelf/base.html' %}
+
+{% block title %}Books - Library Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>Books</h2>
+    {% if perms.bookshelf.can_create %}
+        <a href="{% url 'book_create' %}" class="btn btn-primary">Add New Book</a>
+    {% endif %}
+</div>
+
+<div class="row">
+    {% for book in books %}
+        <div class="col-md-4 mb-3">
+            <div class="card">
+                {% if book.cover %}
+                    <img src="{{ book.cover.url }}" class="card-img-top" style="height: 200px; object-fit: cover;">
+                {% endif %}
+                <div class="card-body">
+                    <h5 class="card-title">{{ book.title }}</h5>
+                    <p class="card-text">
+                        <strong>Author:</strong> {{ book.author }}<br>
+                        <strong>Year:</strong> {{ book.publication_year }}<br>
+                        <strong>Pages:</strong> {{ book.pages }}
+                    </p>
+                    <div class="btn-group" role="group">
+                        {% if perms.bookshelf.can_view %}
+                            <a href="{% url 'book_detail' book.pk %}" class="btn btn-outline-primary btn-sm">View</a>
+                        {% endif %}
+                        {% if perms.bookshelf.can_edit %}
+                            <a href="{% url 'book_edit' book.pk %}" class="btn btn-outline-secondary btn-sm">Edit</a>
+                        {% endif %}
+                        {% if perms.bookshelf.can_delete %}
+                            <a href="{% url 'book_delete' book.pk %}" class="btn btn-outline-danger btn-sm">Delete</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    {% empty %}
+        <div class="col-12">
+            <p class="text-muted">No books available.</p>
+        </div>
+    {% endfor %}
+</div>
+{% endblock %}
