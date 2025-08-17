@@ -1,17 +1,17 @@
-from django.urls import reverse_lazy  # For class-based view redirects
+from django.shortcuts import render, get_object_or_404, redirect
+from django.views.generic import ListView, DetailView
+from django.views.generic.detail import DetailView
+from .models import Library
+from .models import Book, UserProfile  # Import new models
+from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.contrib.auth import login, logout, authenticate
+from django.contrib import messages
 from django.contrib.auth.decorators import (
     login_required,
     user_passes_test,
     permission_required,
 )
-from django.contrib import messages
-from django.contrib.auth import login, logout, authenticate
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
-from .models import Book, UserProfile  # Import new models
-from .models import Library
-from django.views.generic import ListView, DetailView
-
-t
+from django.urls import reverse_lazy  # For class-based view redirects
 
 # Task 1: Function-based View to list all books
 
