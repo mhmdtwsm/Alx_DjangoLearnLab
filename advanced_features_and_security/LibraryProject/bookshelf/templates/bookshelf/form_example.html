@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <title>Secure Form Example</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; }
+        .form-control { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .form-control:focus { border-color: #007bff; outline: none; box-shadow: 0 0 0 2px rgba(0,123,255,.25); }
+        .btn { background: #007bff; color: white; padding: 12px 30px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        .btn:hover { background: #0056b3; }
+        .error { color: #dc3545; font-size: 14px; margin-top: 5px; }
+        .success { color: #28a745; font-size: 14px; margin: 15px 0; }
+        .security-badge { background: #e7f3ff; border: 1px solid #b8daff; padding: 10px; border-radius: 4px; margin: 20px 0; }
+        .required { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Secure Book Entry Form</h1>
+        
+        <div class="security-badge">
+            <strong>🔒 Security Features:</strong> This form includes CSRF protection, 
+            input validation, XSS prevention, and secure data handling.
+        </div>
+        
+        {% if messages %}
+            {% for message in messages %}
+                <div class="success">{{ message|escape }}</div>
+            {% endfor %}
+        {% endif %}
+        
+        <!-- Secure Book Entry Form -->
+        <form method="post" action="" novalidate>
+            {% csrf_token %}
+            
+            <div class="form-group">
+                <label for="id_title">Book Title <span class="required">*</span></label>
+                {{ form.title }}
+                {% if form.title.errors %}
+                    {% for error in form.title.errors %}
+                        <div class="error">{{ error|escape }}</div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            
+            <div class="form-group">
+                <label for="id_author">Author <span class="required">*</span></label>
+                {{ form.author }}
+                {% if form.author.errors %}
+                    {% for error in form.author.errors %}
+                        <div class="error">{{ error|escape }}</div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            
+            <div class="form-group">
+                <label for="id_publication_year">Publication Year <span class="required">*</span></label>
+                {{ form.publication_year }}
+                {% if form.publication_year.errors %}
+                    {% for error in form.publication_year.errors %}
+                        <div class="error">{{ error|escape }}</div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            
+            <!-- Hidden honeypot field to catch bots -->
+            <div style="display: none;">
+                <label for="honeypot">Leave this empty:</label>
+                <input type="text" name="honeypot" id="honeypot">
+            </div>
+            
+            <button type="submit" class="btn">Add Book Securely</button>
+        </form>
+        
+        <div class="security-badge" style="margin-top: 30px;">
+            <h4>Security Measures Implemented:</h4>
+            <ul>
+                <li>✅ CSRF Token Protection</li>
+                <li>✅ Input Validation & Sanitization</li>
+                <li>✅ XSS Prevention (Output Escaping)</li>
+                <li>✅ Honeypot Spam Protection</li>
+                <li>✅ Secure HTTP Headers</li>
+                <li>✅ Form Field Length Limits</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script>
+        // Secure client-side validation
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.querySelector('form');
+            const honeypot = document.getElementById('honeypot');
+            
+            form.addEventListener('submit', function(e) {
+                // Check honeypot (anti-spam)
+                if (honeypot.value !== '') {
+                    e.preventDefault();
+                    alert('Spam detected. Form submission blocked.');
+                    return false;
+                }
+                
+                // Basic client-side validation
+                const requiredFields = form.querySelectorAll('[required]');
+                let isValid = true;
+                
+                requiredFields.forEach(function(field) {
+                    if (field.value.trim() === '') {
+                        isValid = false;
+                        field.style.borderColor = '#dc3545';
+                    } else {
+                        field.style.borderColor = '#ddd';
+                    }
+                });
+                
+                if (!isValid) {
+                    e.preventDefault();
+                    alert('Please fill in all required fields.');
+                    return false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

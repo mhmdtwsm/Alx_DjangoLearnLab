@@ -1,0 +1,29 @@
+# Security-focused Django requirements
+# Install with: pip install -r requirements_security.txt
+
+# Core Django (use latest stable version)
+Django>=4.2.0,<5.0
+
+# Security enhancements
+django-csp>=3.7              # Content Security Policy middleware
+django-security>=0.20.0      # Additional security middleware
+django-ratelimit>=3.0.1      # Rate limiting protection
+django-axes>=5.40.1          # Brute force protection
+django-session-timeout>=0.1.0 # Session timeout management
+
+# Input validation and sanitization
+bleach>=6.0.0               # HTML sanitization
+django-crispy-forms>=2.0    # Secure form rendering
+
+# Security monitoring
+django-security-audit>=1.0  # Security audit tools
+django-defender>=0.9.7      # Advanced security monitoring
+
+# Production security
+gunicorn>=21.2.0            # Secure WSGI server
+whitenoise>=6.5.0           # Static file serving
+psycopg2-binary>=2.9.7      # PostgreSQL adapter (more secure than SQLite for production)
+
+# Development security tools
+bandit>=1.7.5               # Security linting
+safety>=2.3.4               # Check for known security vulnerabilities

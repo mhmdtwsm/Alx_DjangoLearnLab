@@ -1,47 +1,116 @@
-{% extends 'bookshelf/base.html' %}
-
-{% block title %}Books - Library Management{% endblock %}
-
-{% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>Books</h2>
-    {% if perms.bookshelf.can_create %}
-        <a href="{% url 'book_create' %}" class="btn btn-primary">Add New Book</a>
-    {% endif %}
-</div>
-
-<div class="row">
-    {% for book in books %}
-        <div class="col-md-4 mb-3">
-            <div class="card">
-                {% if book.cover %}
-                    <img src="{{ book.cover.url }}" class="card-img-top" style="height: 200px; object-fit: cover;">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-XSS-Protection" content="1; mode=block">
+    <title>Secure Book List</title>
+    <style>
+        /* Inline styles for security - avoids external CSS injection */
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .form-group { margin-bottom: 15px; }
+        .form-control { width: 100%; padding: 8px; border: 1px solid #ddd; }
+        .btn { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
+        .btn:hover { background: #0056b3; }
+        .book-item { border: 1px solid #ddd; margin: 10px 0; padding: 15px; }
+        .error { color: #dc3545; margin: 5px 0; }
+        .success { color: #28a745; margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Secure Book Library</h1>
+        
+        <!-- Secure Search Form with CSRF Protection -->
+        <form method="post" action="{% url 'book_search' %}">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="search_query">Search Books (Secure):</label>
+                <input type="text" 
+                       id="search_query" 
+                       name="query" 
+                       class="form-control"
+                       placeholder="Enter search terms..."
+                       maxlength="200"
+                       required>
+                <!-- Display form errors securely -->
+                {% if form.query.errors %}
+                    <div class="error">
+                        {% for error in form.query.errors %}
+                            {{ error|escape }}
+                        {% endfor %}
+                    </div>
                 {% endif %}
-                <div class="card-body">
-                    <h5 class="card-title">{{ book.title }}</h5>
-                    <p class="card-text">
-                        <strong>Author:</strong> {{ book.author }}<br>
-                        <strong>Year:</strong> {{ book.publication_year }}<br>
-                        <strong>Pages:</strong> {{ book.pages }}
-                    </p>
-                    <div class="btn-group" role="group">
-                        {% if perms.bookshelf.can_view %}
-                            <a href="{% url 'book_detail' book.pk %}" class="btn btn-outline-primary btn-sm">View</a>
-                        {% endif %}
-                        {% if perms.bookshelf.can_edit %}
-                            <a href="{% url 'book_edit' book.pk %}" class="btn btn-outline-secondary btn-sm">Edit</a>
-                        {% endif %}
-                        {% if perms.bookshelf.can_delete %}
-                            <a href="{% url 'book_delete' book.pk %}" class="btn btn-outline-danger btn-sm">Delete</a>
+            </div>
+            <button type="submit" class="btn">Secure Search</button>
+        </form>
+        
+        <!-- Display Books Securely -->
+        <div class="books-list">
+            {% if books %}
+                <h2>Books Found:</h2>
+                {% for book in books %}
+                    <div class="book-item">
+                        <!-- All user content is escaped to prevent XSS -->
+                        <h3>{{ book.title|escape }}</h3>
+                        <p><strong>Author:</strong> {{ book.author|escape }}</p>
+                        <p><strong>Year:</strong> {{ book.publication_year|escape }}</p>
+                        {% if book.description %}
+                            <p><strong>Description:</strong> {{ book.description|escape|truncatewords:50 }}</p>
                         {% endif %}
                     </div>
+                {% empty %}
+                    <p>No books found matching your search.</p>
+                {% endfor %}
+            {% endif %}
+        </div>
+        
+        <!-- Secure Comment Form -->
+        <div class="comment-section">
+            <h3>Add a Comment (Secure)</h3>
+            <form method="post" action="{% url 'add_comment' %}">
+                {% csrf_token %}
+                <div class="form-group">
+                    <textarea name="comment" 
+                              class="form-control" 
+                              rows="4" 
+                              placeholder="Enter your comment..."
+                              maxlength="1000"
+                              required></textarea>
                 </div>
-            </div>
+                <button type="submit" class="btn">Add Comment Securely</button>
+            </form>
         </div>
-    {% empty %}
-        <div class="col-12">
-            <p class="text-muted">No books available.</p>
+        
+        <div class="security-info">
+            <small>
+                <strong>Security Note:</strong> This page implements CSRF protection, 
+                XSS prevention, and input validation for your security.
+            </small>
         </div>
-    {% endfor %}
-</div>
-{% endblock %}
+    </div>
+    
+    <script>
+        // Minimal, secure JavaScript
+        document.addEventListener('DOMContentLoaded', function() {
+            // Basic form validation
+            const forms = document.querySelectorAll('form');
+            forms.forEach(function(form) {
+                form.addEventListener('submit', function(e) {
+                    const textInputs = form.querySelectorAll('input[type="text"], textarea');
+                    textInputs.forEach(function(input) {
+                        if (input.value.trim() === '') {
+                            e.preventDefault();
+                            alert('Please fill in all required fields.');
+                            return false;
+                        }
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>
