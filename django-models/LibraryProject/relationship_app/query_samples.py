@@ -1,4 +1,4 @@
-from relationship_app.models import Author, Book, Library, Librarian, User, UserProfile
+from relationshifrom relationship_app.models import Author, Book, Library, Librarian, User, UserProfile
 import os
 import django
 
@@ -25,7 +25,8 @@ def run_queries():
     book1 = Book.objects.create(
         title="Pride and Prejudice", author=author1, publication_year=1813
     )
-    book2 = Book.objects.create(title="1984", author=author2, publication_year=1949)
+    book2 = Book.objects.create(
+        title="1984", author=author2, publication_year=1949)
     book3 = Book.objects.create(
         title="Sense and Sensibility", author=author1, publication_year=1811
     )
@@ -98,9 +99,10 @@ def run_queries():
 
     print("\nQuery 3: Retrieve the librarian for a library (Central Library)")
     try:
-        central_library_obj_for_librarian = Library.objects.get(name="Central Library")
-        central_librarian = central_library_obj_for_librarian.librarian
-        print(f"- The librarian for Central Library is: {central_librarian.name}")
+        central_library_obj = Library.objects.get(name="Central Library")
+        central_librarian = Librarian.objects.get(library=central_library_obj)
+        print(
+            f"- The librarian for Central Library is: {central_librarian.name}")
     except Library.DoesNotExist:
         print(f"Error: Library 'Central Library' does not exist for librarian query.")
     except Librarian.DoesNotExist:
