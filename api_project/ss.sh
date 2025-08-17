@@ -1,315 +1,153 @@
 #!/bin/bash
 
-# Django REST Framework Project Setup Script
-# This script sets up a new Django project with DRF for the ALX Django Learning Lab
+# Django REST Framework API Setup Script
+# This script creates all necessary files for the Book API endpoint
 
 set -e  # Exit on any error
 
-echo "🚀 Starting Django REST Framework Project Setup..."
-echo "Current directory: $(pwd)"
+echo "🚀 Setting up Django REST Framework API endpoint for Books..."
 
 # Check if we're in the correct directory
-if [[ ! $(pwd) =~ api_project$ ]]; then
-    echo "❌ Error: Please run this script from the api_project directory"
-    echo "Expected: /home/mhmd/study/alx/Alx_DjangoLearnLab/api_project"
-    exit 1
-fi
-
-echo "✅ Directory check passed!"
-
-# Step 1: Create and activate virtual environment
-echo "🐍 Creating virtual environment..."
-if [ ! -d "venv" ]; then
-    python -m venv venv
-    echo "✅ Virtual environment created"
-else
-    echo "ℹ️  Virtual environment already exists"
-fi
-
-echo "🔄 Activating virtual environment..."
-source venv/bin/activate
-
-# Verify we're in the virtual environment
-if [[ "$VIRTUAL_ENV" != "" ]]; then
-    echo "✅ Virtual environment activated: $VIRTUAL_ENV"
-else
-    echo "❌ Failed to activate virtual environment"
-    exit 1
-fi
-
-# Step 2: Install Django
-echo "📦 Installing Django..."
-pip install django
-
-# Step 3: Install Django REST Framework
-echo "📦 Installing Django REST Framework..."
-pip install djangorestframework
-
-# Step 4: Create Django project (only if it doesn't exist)
 if [ ! -f "manage.py" ]; then
-    echo "🏗️  Creating Django project 'api_project'..."
-    django-admin startproject api_project .
-else
-    echo "ℹ️  Django project already exists, skipping creation..."
+    echo "❌ Error: manage.py not found. Please run this script from the api_project directory."
+    exit 1
 fi
 
-# Step 5: Create the api app
-echo "🔧 Creating 'api' app..."
+# Check if api app exists
 if [ ! -d "api" ]; then
-    python manage.py startapp api
-else
-    echo "ℹ️  API app already exists, skipping creation..."
+    echo "❌ Error: api directory not found. Please ensure the api app exists."
+    exit 1
 fi
 
-# Step 6: Configure settings.py
-echo "⚙️  Configuring settings.py..."
-SETTINGS_FILE="api_project/settings.py"
+echo "✅ Found Django project structure"
 
-# Backup original settings
-cp "$SETTINGS_FILE" "$SETTINGS_FILE.backup"
-
-# Add rest_framework and api to INSTALLED_APPS
-python << EOF
-import re
-
-# Read the settings file
-with open('$SETTINGS_FILE', 'r') as f:
-    content = f.read()
-
-# Check if rest_framework is already in INSTALLED_APPS
-if "'rest_framework'" not in content:
-    # Find INSTALLED_APPS and add rest_framework
-    pattern = r"(INSTALLED_APPS\s*=\s*\[)(.*?)(\])"
-    
-    def replace_apps(match):
-        start = match.group(1)
-        apps = match.group(2)
-        end = match.group(3)
-        
-        # Add rest_framework if not present
-        if "'rest_framework'" not in apps:
-            apps += "\n    'rest_framework',"
-        
-        # Add api if not present
-        if "'api'" not in apps:
-            apps += "\n    'api',"
-        
-        return start + apps + "\n" + end
-    
-    content = re.sub(pattern, replace_apps, content, flags=re.DOTALL)
-    
-    # Write back to file
-    with open('$SETTINGS_FILE', 'w') as f:
-        f.write(content)
-    
-    print("✅ Updated INSTALLED_APPS with 'rest_framework' and 'api'")
-else:
-    print("ℹ️  INSTALLED_APPS already configured")
-EOF
-
-# Step 7: Create the Book model
-echo "📚 Creating Book model..."
-cat > api/models.py << 'EOF'
-from django.db import models
-
-class Book(models.Model):
-    title = models.CharField(max_length=200)
-    author = models.CharField(max_length=100)
-    
-    def __str__(self):
-        return self.title
-    
-    class Meta:
-        ordering = ['title']
-EOF
-
-echo "✅ Book model created in api/models.py"
-
-# Step 8: Create and apply migrations
-echo "🗄️  Creating and applying migrations..."
-python manage.py makemigrations
-python manage.py migrate
-
-# Step 9: Create a superuser (optional, with default credentials for development)
-echo "👤 Creating superuser..."
-python << EOF
-import os
-import django
-from django.contrib.auth import get_user_model
-
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'api_project.settings')
-django.setup()
-
-User = get_user_model()
-if not User.objects.filter(username='admin').exists():
-    User.objects.create_superuser('admin', 'admin@example.com', 'admin123')
-    print("✅ Superuser 'admin' created with password 'admin123'")
-else:
-    print("ℹ️  Superuser already exists")
-EOF
-
-# Step 10: Create basic project structure files
-echo "📁 Creating additional project files..."
-
-# Create requirements.txt
-cat > requirements.txt << EOF
-Django>=4.2.0
-djangorestframework>=3.14.0
-EOF
-
-# Create .gitignore
-cat > .gitignore << EOF
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Django
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-media/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-EOF
-
-# Create a simple README for the project
-cat > README.md << EOF
-# API Project - Django REST Framework
-
-This is a Django REST Framework project created for the ALX Django Learning Lab.
-
-## Setup
-
-1. Activate the virtual environment:
-   ```
-   source venv/bin/activate
-   ```
-
-2. Install dependencies (if not using the setup script):
-   ```
-   pip install -r requirements.txt
-   ```
-
-3. Run migrations:
-   ```
-   python manage.py migrate
-   ```
-
-4. Start the development server:
-   ```
-   python manage.py runserver
-   ```
-
-## Models
-
-- **Book**: A simple model with title and author fields
-
-## Admin Access
-
-- Username: admin
-- Password: admin123
-- Admin URL: http://127.0.0.1:8000/admin/
-
-## API Endpoints
-
-Coming soon in future tasks!
-EOF
-
-# Step 11: Register the Book model in admin
-echo "🔧 Configuring Django admin..."
-cat > api/admin.py << EOF
-from django.contrib import admin
+# Create serializers.py in the api app
+echo "📝 Creating serializers.py..."
+cat > api/serializers.py << 'EOF'
+from rest_framework import serializers
 from .models import Book
 
-@admin.register(Book)
-class BookAdmin(admin.ModelAdmin):
-    list_display = ('title', 'author')
-    search_fields = ('title', 'author')
-    list_filter = ('author',)
+
+class BookSerializer(serializers.ModelSerializer):
+    """
+    Serializer for the Book model.
+    Converts Book model instances to JSON format and vice versa.
+    """
+    class Meta:
+        model = Book
+        fields = '__all__'  # Include all fields from the Book model
 EOF
 
-# Step 12: Create a simple view to test the setup
-cat > api/views.py << EOF
-from django.http import JsonResponse
+echo "✅ Created api/serializers.py"
 
-def api_home(request):
-    return JsonResponse({
-        'message': 'Welcome to the API Project!',
-        'status': 'Setup complete',
-        'next_steps': [
-            'Visit /admin/ to manage data',
-            'Start building API endpoints',
-            'Implement serializers and viewsets'
-        ]
-    })
+# Update views.py in the api app
+echo "📝 Updating views.py..."
+cat > api/views.py << 'EOF'
+from rest_framework import generics
+from .models import Book
+from .serializers import BookSerializer
+
+
+class BookList(generics.ListAPIView):
+    """
+    API view to retrieve a list of all books.
+    Uses ListAPIView to provide GET method for listing books.
+    """
+    queryset = Book.objects.all()
+    serializer_class = BookSerializer
 EOF
 
-# Create basic URL configuration for the api app
-cat > api/urls.py << EOF
+echo "✅ Updated api/views.py"
+
+# Create urls.py in the api app
+echo "📝 Creating api/urls.py..."
+cat > api/urls.py << 'EOF'
 from django.urls import path
-from . import views
+from .views import BookList
 
 urlpatterns = [
-    path('', views.api_home, name='api_home'),
+    path('books/', BookList.as_view(), name='book-list'),  # Maps to the BookList view
 ]
 EOF
 
-# Update main URLs to include api URLs
-cat > api_project/urls.py << EOF
+echo "✅ Created api/urls.py"
+
+# Check if main urls.py includes api urls
+echo "📝 Checking main urls.py configuration..."
+if ! grep -q "path('api/', include('api.urls'))" api_project/urls.py; then
+    echo "⚠️  Adding api URLs to main urls.py..."
+    
+    # Create a backup of the original urls.py
+    cp api_project/urls.py api_project/urls.py.backup.$(date +%Y%m%d_%H%M%S)
+    
+    # Create updated urls.py
+    cat > api_project/urls.py << 'EOF'
 from django.contrib import admin
 from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/', include('api.urls')),
+    path('api/', include('api.urls')),  # Include API URLs
 ]
 EOF
+    echo "✅ Updated api_project/urls.py"
+else
+    echo "✅ API URLs already configured in main urls.py"
+fi
+
+# Check if DRF is in requirements.txt
+echo "📝 Checking requirements.txt..."
+if ! grep -q "djangorestframework" requirements.txt; then
+    echo "⚠️  Adding djangorestframework to requirements.txt..."
+    echo "djangorestframework" >> requirements.txt
+    echo "✅ Added djangorestframework to requirements.txt"
+else
+    echo "✅ djangorestframework already in requirements.txt"
+fi
+
+# Create a test script
+echo "📝 Creating test script..."
+cat > test_api.sh << 'EOF'
+#!/bin/bash
+
+# Test script for the Book API endpoint
+echo "🧪 Testing Book API endpoint..."
+
+# Check if server is running
+if ! curl -s http://127.0.0.1:8000/api/books/ > /dev/null; then
+    echo "❌ Server not responding. Make sure Django development server is running:"
+    echo "   python manage.py runserver"
+    exit 1
+fi
+
+echo "📡 Making API request to http://127.0.0.1:8000/api/books/"
+echo "Response:"
+curl -s -H "Accept: application/json" http://127.0.0.1:8000/api/books/ | python -m json.tool
 
 echo ""
-echo "🎉 Django REST Framework project setup complete!"
-echo ""
-echo "📋 Summary of what was created:"
-echo "   ✅ Virtual environment (venv/)"
-echo "   ✅ Django project with DRF installed"
-echo "   ✅ 'api' app created and configured"
-echo "   ✅ Book model with title and author fields"
-echo "   ✅ Database migrations created and applied"
-echo "   ✅ Superuser created (admin/admin123)"
-echo "   ✅ Admin interface configured"
-echo "   ✅ Basic project files (README.md, requirements.txt, .gitignore)"
-echo ""
-echo "🚀 Next steps:"
-echo "   1. Activate virtual environment: source venv/bin/activate"
-echo "   2. Start the development server: python manage.py runserver"
-echo "   3. Visit http://127.0.0.1:8000/api/ to see the welcome message"
-echo "   4. Visit http://127.0.0.1:8000/admin/ to access the admin interface"
-echo "   5. Continue with the next tasks to build your API endpoints!"
-echo ""
-echo "🔐 Admin credentials:"
-echo "   Username: admin"
-echo "   Password: admin123"
-echo ""
-echo "Happy coding! 🐍✨"
+echo "✅ API test completed!"
+EOF
+
+chmod +x test_api.sh
+echo "✅ Created test_api.sh"
+
+# Create setup instructions
+echo "📝 Creating setup instructions..."
+cat > API_SETUP_INSTRUCTIONS.md << 'EOF'
+# Django REST Framework API Setup
+
+## Files Created/Modified:
+
+1. **api/serializers.py** - BookSerializer for converting Book models to JSON
+2. **api/views.py** - BookList view using ListAPIView
+3. **api/urls.py** - URL patterns for the API endpoints
+4. **api_project/urls.py** - Updated to include API URLs
+5. **requirements.txt** - Added djangorestframework if not present
+6. **test_api.sh** - Script to test the API endpoint
+
+## Next Steps:
+
+1. **Install dependencies** (if not already done):
+   ```bash
+   pip install -r requirements.txt
+
