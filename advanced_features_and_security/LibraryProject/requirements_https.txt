@@ -1,0 +1,35 @@
+# HTTPS Security Requirements
+# Additional packages for enhanced security
+
+# Django security packages
+django-security>=0.17.0
+django-csp>=3.7
+django-permissions-policy>=4.15.0
+
+# SSL/TLS testing and validation
+pyOpenSSL>=23.0.0
+cryptography>=41.0.0
+
+# Security headers and middleware
+django-security-headers>=1.0.0
+
+# Content Security Policy
+django-csp>=3.7
+
+# Additional security utilities
+django-ratelimit>=4.0.0
+django-axes>=6.1.0
+
+# Environment and configuration management
+python-decouple>=3.8
+django-environ>=0.11.0
+
+# Logging and monitoring
+sentry-sdk[django]>=1.32.0
+
+# Development and testing
+django-debug-toolbar>=4.2.0
+django-extensions>=3.2.0
+
+# Note: These packages are optional and should be evaluated
+# based on your specific security requirements and compatibility
