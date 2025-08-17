@@ -1,47 +1,252 @@
 #!/bin/bash
 
-# --- Project Setup Script for Django Project: django-models ---
-# This script automates the creation of the directory structure and
-# essential files for your "Deep Dive into Django Models and Views" project.
+# Django Custom User Model Setup Script
+# This script creates a custom user model extending AbstractUser with additional fields
 
-echo "Starting Django project directory and file setup..."
+set -e  # Exit on any error
 
-# Define the main project directory name
-PROJECT_DIR="django-models"
-# Define the Django app name
-APP_DIR="relationship_app"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
 
-# 1. Create the main project directory
-echo "Creating main project directory: $PROJECT_DIR/"
-mkdir -p "$PROJECT_DIR"
-cd "$PROJECT_DIR" || { echo "Failed to enter $PROJECT_DIR. Exiting."; exit 1; }
+# Base directory
+BASE_DIR="/home/mhmd/study/alx/Alx_DjangoLearnLab/advanced_features_and_security/LibraryProject"
 
-# 2. Create the core Django project files (placeholders for django-admin)
-echo "Creating core Django project files..."
-mkdir -p "$PROJECT_DIR" # Create inner project directory for settings etc.
-touch "$PROJECT_DIR/__init__.py"
-touch "$PROJECT_DIR/settings.py"
-touch "$PROJECT_DIR/urls.py"
-touch "$PROJECT_DIR/wsgi.py"
-touch "$PROJECT_DIR/asgi.py"
-touch "manage.py"
-touch "db.sqlite3" # Placeholder for database file
+echo -e "${BLUE}🚀 Setting up Custom User Model for Django Project${NC}"
+echo "=================================================="
 
-# Add basic content to settings.py
-cat <<EOF > "$PROJECT_DIR/settings.py"
-# Django settings for $PROJECT_DIR project.
+# Check if base directory exists
+if [ ! -d "$BASE_DIR" ]; then
+    echo -e "${RED}❌ Error: Base directory $BASE_DIR does not exist!${NC}"
+    exit 1
+fi
 
+cd "$BASE_DIR"
+
+echo -e "${YELLOW}📍 Working in: $(pwd)${NC}"
+
+# Step 1: Create custom user model in bookshelf/models.py
+echo -e "${BLUE}Step 1: Creating custom user model...${NC}"
+
+# Backup original models.py
+if [ -f "bookshelf/models.py" ]; then
+    cp "bookshelf/models.py" "bookshelf/models.py.backup"
+    echo -e "${GREEN}✅ Backed up original bookshelf/models.py${NC}"
+fi
+
+# Create new models.py with custom user model
+cat > "bookshelf/models.py" << 'EOF'
+from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.db import models
+from django.utils.translation import gettext_lazy as _
+
+
+class CustomUserManager(BaseUserManager):
+    """
+    Custom user manager that handles user creation and queries
+    """
+    def create_user(self, username, email=None, password=None, **extra_fields):
+        """
+        Create and return a regular user with an email and password.
+        """
+        if not username:
+            raise ValueError(_('The Username field must be set'))
+        
+        if email:
+            email = self.normalize_email(email)
+        
+        # Set default values for extra fields
+        extra_fields.setdefault('is_staff', False)
+        extra_fields.setdefault('is_superuser', False)
+        
+        user = self.model(username=username, email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, username, email=None, password=None, **extra_fields):
+        """
+        Create and return a superuser with an email and password.
+        """
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError(_('Superuser must have is_staff=True.'))
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError(_('Superuser must have is_superuser=True.'))
+
+        return self.create_user(username, email, password, **extra_fields)
+
+
+class CustomUser(AbstractUser):
+    """
+    Custom user model extending AbstractUser with additional fields
+    """
+    date_of_birth = models.DateField(
+        _('Date of Birth'), 
+        null=True, 
+        blank=True,
+        help_text=_('Enter your date of birth')
+    )
+    
+    profile_photo = models.ImageField(
+        _('Profile Photo'),
+        upload_to='profile_photos/',
+        null=True,
+        blank=True,
+        help_text=_('Upload a profile photo')
+    )
+    
+    # Use custom manager
+    objects = CustomUserManager()
+
+    class Meta:
+        verbose_name = _('User')
+        verbose_name_plural = _('Users')
+        db_table = 'auth_user'  # Keep same table name to avoid conflicts
+
+    def __str__(self):
+        return self.username
+
+    def get_full_name(self):
+        """
+        Return the first_name plus the last_name, with a space in between.
+        """
+        full_name = f'{self.first_name} {self.last_name}'
+        return full_name.strip()
+
+    def get_short_name(self):
+        """
+        Return the short name for the user.
+        """
+        return self.first_name
+
+
+# Keep existing Book model if it exists
+class Book(models.Model):
+    """
+    Book model for the library system
+    """
+    title = models.CharField(max_length=200)
+    author = models.CharField(max_length=100)
+    publication_year = models.IntegerField()
+    
+    class Meta:
+        permissions = [
+            ("can_view", "Can view book"),
+            ("can_create", "Can create book"),
+            ("can_edit", "Can edit book"),
+            ("can_delete", "Can delete book"),
+        ]
+    
+    def __str__(self):
+        return self.title
+EOF
+
+echo -e "${GREEN}✅ Created custom user model in bookshelf/models.py${NC}"
+
+# Step 2: Update bookshelf/admin.py
+echo -e "${BLUE}Step 2: Setting up admin interface...${NC}"
+
+# Backup original admin.py
+if [ -f "bookshelf/admin.py" ]; then
+    cp "bookshelf/admin.py" "bookshelf/admin.py.backup"
+    echo -e "${GREEN}✅ Backed up original bookshelf/admin.py${NC}"
+fi
+
+# Create new admin.py
+cat > "bookshelf/admin.py" << 'EOF'
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from django.utils.translation import gettext_lazy as _
+from .models import CustomUser, Book
+
+
+@admin.register(CustomUser)
+class CustomUserAdmin(UserAdmin):
+    """
+    Custom user admin that includes the additional fields
+    """
+    # Fields to display in the admin list view
+    list_display = ('username', 'email', 'first_name', 'last_name', 'date_of_birth', 'is_staff', 'is_active')
+    
+    # Fields that can be searched
+    search_fields = ('username', 'first_name', 'last_name', 'email')
+    
+    # Filters for the right sidebar
+    list_filter = ('is_staff', 'is_superuser', 'is_active', 'date_joined', 'date_of_birth')
+    
+    # Fields to display when editing a user
+    fieldsets = UserAdmin.fieldsets + (
+        (_('Additional Information'), {
+            'fields': ('date_of_birth', 'profile_photo'),
+            'classes': ('collapse',),  # Make this section collapsible
+        }),
+    )
+    
+    # Fields to display when creating a new user
+    add_fieldsets = UserAdmin.add_fieldsets + (
+        (_('Additional Information'), {
+            'fields': ('date_of_birth', 'profile_photo'),
+            'classes': ('collapse',),
+        }),
+    )
+    
+    # Read-only fields
+    readonly_fields = ('date_joined', 'last_login')
+    
+    # Ordering
+    ordering = ('username',)
+
+
+@admin.register(Book)
+class BookAdmin(admin.ModelAdmin):
+    """
+    Admin configuration for Book model
+    """
+    list_display = ('title', 'author', 'publication_year')
+    list_filter = ('publication_year', 'author')
+    search_fields = ('title', 'author')
+    ordering = ('title',)
+EOF
+
+echo -e "${GREEN}✅ Set up admin interface in bookshelf/admin.py${NC}"
+
+# Step 3: Update settings.py
+echo -e "${BLUE}Step 3: Updating settings.py...${NC}"
+
+SETTINGS_FILE="LibraryProject/settings.py"
+
+# Backup original settings.py
+if [ -f "$SETTINGS_FILE" ]; then
+    cp "$SETTINGS_FILE" "$SETTINGS_FILE.backup"
+    echo -e "${GREEN}✅ Backed up original settings.py${NC}"
+fi
+
+# Check if settings.py exists, if not create a basic one
+if [ ! -f "$SETTINGS_FILE" ]; then
+    echo -e "${YELLOW}⚠️  settings.py not found, creating basic settings file...${NC}"
+    mkdir -p "LibraryProject"
+    cat > "$SETTINGS_FILE" << 'EOF'
 import os
 from pathlib import Path
 
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = 'your-secret-key-here' # IMPORTANT: Change this in production!
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = 'django-insecure-your-secret-key-here'
 
+# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
 ALLOWED_HOSTS = []
 
+# Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -49,7 +254,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    '$APP_DIR', # Add your app here
+    'bookshelf',
+    'relationship_app',
 ]
 
 MIDDLEWARE = [
@@ -62,7 +268,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = '$PROJECT_DIR.urls'
+ROOT_URLCONF = 'LibraryProject.urls'
 
 TEMPLATES = [
     {
@@ -80,8 +286,9 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = '$PROJECT_DIR.wsgi.application'
+WSGI_APPLICATION = 'LibraryProject.wsgi.application'
 
+# Database
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -89,695 +296,208 @@ DATABASES = {
     }
 }
 
+# Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',},
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
 ]
 
+# Internationalization
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
-STATIC_URL = '/static/'
+# Static files (CSS, JavaScript, Images)
+STATIC_URL = 'static/'
 
+# Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-LOGIN_REDIRECT_URL = '/' # Redirect to home after login
-LOGOUT_REDIRECT_URL = '/login/' # Redirect to login after logout
+# Media files
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 EOF
+fi
 
-# Add basic content to root urls.py
-cat <<EOF > "$PROJECT_DIR/urls.py"
+# Add or update AUTH_USER_MODEL setting
+if grep -q "AUTH_USER_MODEL" "$SETTINGS_FILE"; then
+    # Replace existing AUTH_USER_MODEL
+    sed -i "s/^AUTH_USER_MODEL.*/AUTH_USER_MODEL = 'bookshelf.CustomUser'/" "$SETTINGS_FILE"
+    echo -e "${GREEN}✅ Updated AUTH_USER_MODEL in settings.py${NC}"
+else
+    # Add AUTH_USER_MODEL at the end of the file
+    echo "" >> "$SETTINGS_FILE"
+    echo "# Custom User Model" >> "$SETTINGS_FILE"
+    echo "AUTH_USER_MODEL = 'bookshelf.CustomUser'" >> "$SETTINGS_FILE"
+    echo -e "${GREEN}✅ Added AUTH_USER_MODEL to settings.py${NC}"
+fi
+
+# Ensure MEDIA settings are present
+if ! grep -q "MEDIA_URL" "$SETTINGS_FILE"; then
+    echo "" >> "$SETTINGS_FILE"
+    echo "# Media files" >> "$SETTINGS_FILE"
+    echo "MEDIA_URL = '/media/'" >> "$SETTINGS_FILE"
+    echo "MEDIA_ROOT = BASE_DIR / 'media'" >> "$SETTINGS_FILE"
+    echo -e "${GREEN}✅ Added MEDIA settings to settings.py${NC}"
+fi
+
+# Step 4: Update relationship_app models to use custom user
+echo -e "${BLUE}Step 4: Updating relationship_app models...${NC}"
+
+if [ -f "relationship_app/models.py" ]; then
+    cp "relationship_app/models.py" "relationship_app/models.py.backup"
+    echo -e "${GREEN}✅ Backed up relationship_app/models.py${NC}"
+    
+    # Update foreign key references to use the custom user model
+    sed -i 's/from django.contrib.auth.models import User/from django.contrib.auth import get_user_model/' "relationship_app/models.py"
+    sed -i 's/models.ForeignKey(User,/models.ForeignKey(get_user_model(),/' "relationship_app/models.py"
+    echo -e "${GREEN}✅ Updated relationship_app models to use custom user${NC}"
+fi
+
+# Step 5: Create URLs configuration for media files
+echo -e "${BLUE}Step 5: Updating URL configuration...${NC}"
+
+URLS_FILE="LibraryProject/urls.py"
+
+# Create or update main URLs file
+if [ ! -f "$URLS_FILE" ]; then
+    cat > "$URLS_FILE" << 'EOF'
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('$APP_DIR.urls')), # Include app's URLs
+    path('', include('bookshelf.urls')),
+    path('relationship/', include('relationship_app.urls')),
 ]
+
+# Serve media files during development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+EOF
+    echo -e "${GREEN}✅ Created main URLs configuration${NC}"
+else
+    # Check if media files serving is already configured
+    if ! grep -q "static(settings.MEDIA_URL" "$URLS_FILE"; then
+        # Add media files configuration
+        echo "" >> "$URLS_FILE"
+        echo "# Serve media files during development" >> "$URLS_FILE"
+        echo "from django.conf import settings" >> "$URLS_FILE"
+        echo "from django.conf.urls.static import static" >> "$URLS_FILE"
+        echo "" >> "$URLS_FILE"
+        echo "if settings.DEBUG:" >> "$URLS_FILE"
+        echo "    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)" >> "$URLS_FILE"
+        echo -e "${GREEN}✅ Added media files serving to URLs${NC}"
+    fi
+fi
+
+# Step 6: Create requirements.txt if it doesn't exist
+echo -e "${BLUE}Step 6: Creating requirements.txt...${NC}"
+
+if [ ! -f "requirements.txt" ]; then
+    cat > "requirements.txt" << 'EOF'
+Django>=4.2,<5.0
+Pillow>=9.0.0
+EOF
+    echo -e "${GREEN}✅ Created requirements.txt with Django and Pillow${NC}"
+fi
+
+# Step 7: Create media directory
+echo -e "${BLUE}Step 7: Creating media directory...${NC}"
+mkdir -p "media/profile_photos"
+echo -e "${GREEN}✅ Created media directories${NC}"
+
+# Step 8: Create migration instructions
+echo -e "${BLUE}Step 8: Creating migration instructions...${NC}"
+
+cat > "MIGRATION_INSTRUCTIONS.md" << 'EOF'
+# Django Custom User Model Migration Instructions
+
+After running this script, you need to perform the following steps:
+
+## 1. Install Required Packages
+```bash
+pip install -r requirements.txt
+```
+
+## 2. Create and Run Migrations
+```bash
+# Remove existing migrations (if this is a fresh setup)
+rm -rf bookshelf/migrations/
+rm -rf relationship_app/migrations/
+
+# Create new migrations
+python manage.py makemigrations bookshelf
+python manage.py makemigrations relationship_app
+python manage.py makemigrations
+
+# Apply migrations
+python manage.py migrate
+```
+
+## 3. Create Superuser
+```bash
+python manage.py createsuperuser
+```
+
+## 4. Run Development Server
+```bash
+python manage.py runserver
+```
+
+## 5. Access Admin Interface
+Visit http://127.0.0.1:8000/admin/ and log in with your superuser credentials.
+
+## Notes:
+- The custom user model includes `date_of_birth` and `profile_photo` fields
+- Profile photos will be uploaded to `media/profile_photos/`
+- All existing user references have been updated to use the custom user model
+- The admin interface has been configured to manage the custom user fields
+
+## Troubleshooting:
+If you encounter migration issues, you may need to:
+1. Delete the database file (`db.sqlite3`)
+2. Remove all migration files
+3. Run the migration commands again
 EOF
 
-# 3. Create the Django app directory
-echo "Creating Django app directory: $APP_DIR/"
-mkdir -p "$APP_DIR"
-cd "$APP_DIR" || { echo "Failed to enter $APP_DIR. Exiting."; exit 1; }
+echo -e "${GREEN}✅ Created migration instructions${NC}"
 
-# 4. Create essential app files
-echo "Creating essential app files: __init__.py, models.py, views.py, urls.py, query_samples.py"
-touch "__init__.py"
-touch "admin.py" # Standard Django app file
-touch "apps.py"  # Standard Django app file
-touch "tests.py" # Standard Django app file
-touch "models.py"
-touch "views.py"
-touch "urls.py"
-touch "query_samples.py"
-
-# Add basic content to models.py
-cat <<EOF > "models.py"
-from django.db import models
-from django.contrib.auth.models import User
-
-# Task 0: Author Model
-class Author(models.Model):
-    name = models.CharField(max_length=100)
-
-    def __str__(self):
-        return self.name
-
-# Task 0 & 4: Book Model with Custom Permissions
-class Book(models.Model):
-    title = models.CharField(max_length=200)
-    author = models.ForeignKey(Author, on_delete=models.CASCADE)
-    publication_year = models.IntegerField(default=2000) # Added for template example
-
-    class Meta:
-        permissions = [
-            ("can_add_book", "Can add book"),
-            ("can_change_book", "Can change book"),
-            ("can_delete_book", "Can delete book"),
-        ]
-
-    def __str__(self):
-        return self.title
-
-# Task 0: Library Model
-class Library(models.Model):
-    name = models.CharField(max_length=100)
-    books = models.ManyToManyField(Book)
-
-    def __str__(self):
-        return self.name
-
-# Task 0: Librarian Model
-class Librarian(models.Model):
-    name = models.CharField(max_length=100)
-    library = models.OneToOneField(Library, on_delete=models.CASCADE)
-
-    def __str__(self):
-        return self.name
-
-# Task 3: UserProfile Model for Role-Based Access Control
-class UserProfile(models.Model):
-    USER_ROLES = (
-        ('Admin', 'Admin'),
-        ('Librarian', 'Librarian'),
-        ('Member', 'Member'),
-    )
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
-    role = models.CharField(max_length=10, choices=USER_ROLES, default='Member')
-
-    def __str__(self):
-        return f"{self.user.username}'s Profile ({self.role})"
-
-# Django Signal to create UserProfile automatically
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-
-@receiver(post_save, sender=User)
-def create_user_profile(sender, instance, created, **kwargs):
-    if created:
-        UserProfile.objects.create(user=instance)
-
-@receiver(post_save, sender=User)
-def save_user_profile(sender, instance, **kwargs):
-    instance.userprofile.save()
-
-EOF
-
-# Add basic content to views.py
-cat <<EOF > "views.py"
-from django.shortcuts import render, get_object_or_404, redirect
-from django.views.generic import ListView, DetailView
-from .models import Book, Library, UserProfile # Import new models
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
-from django.contrib.auth import login, logout, authenticate
-from django.contrib import messages
-from django.contrib.auth.decorators import login_required, user_passes_test, permission_required
-from django.urls import reverse_lazy # For class-based view redirects
-
-# Task 1: Function-based View to list all books
-def list_books(request):
-    books = Book.objects.all()
-    return render(request, 'relationship_app/list_books.html', {'books': books})
-
-# Task 1: Class-based View to display library details
-class LibraryDetailView(DetailView):
-    model = Library
-    template_name = 'relationship_app/library_detail.html'
-    context_object_name = 'library'
-
-# Task 2: User Registration View
-def register_view(request):
-    if request.method == 'POST':
-        form = UserCreationForm(request.POST)
-        if form.is_valid():
-            user = form.save()
-            # Automatically create UserProfile via signal
-            messages.success(request, 'Registration successful! You can now log in.')
-            return redirect('login')
-        else:
-            messages.error(request, 'Registration failed. Please correct the errors.')
-    else:
-        form = UserCreationForm()
-    return render(request, 'relationship_app/register.html', {'form': form})
-
-# Task 2: User Login View
-def login_view(request):
-    if request.method == 'POST':
-        form = AuthenticationForm(request, data=request.POST)
-        if form.is_valid():
-            username = form.cleaned_data.get('username')
-            password = form.cleaned_data.get('password')
-            user = authenticate(username=username, password=password)
-            if user is not None:
-                login(request, user)
-                messages.info(request, f"You are now logged in as {username}.")
-                return redirect('home') # Redirect to a home page after login
-            else:
-                messages.error(request, "Invalid username or password.")
-        else:
-            messages.error(request, "Invalid username or password.")
-    else:
-        form = AuthenticationForm()
-    return render(request, 'relationship_app/login.html', {'form': form})
-
-# Task 2: User Logout View
-@login_required
-def logout_view(request):
-    logout(request)
-    messages.info(request, "You have been logged out.")
-    return redirect('login')
-
-# Helper function to check user roles
-def is_admin(user):
-    return user.is_authenticated and hasattr(user, 'userprofile') and user.userprofile.role == 'Admin'
-
-def is_librarian(user):
-    return user.is_authenticated and hasattr(user, 'userprofile') and user.userprofile.role == 'Librarian'
-
-def is_member(user):
-    return user.is_authenticated and hasattr(user, 'userprofile') and user.userprofile.role == 'Member'
-
-# Task 3: Role-Based Views
-@user_passes_test(is_admin, login_url='/login/')
-@login_required(login_url='/login/')
-def admin_view(request):
-    return render(request, 'relationship_app/admin_view.html')
-
-@user_passes_test(is_librarian, login_url='/login/')
-@login_required(login_url='/login/')
-def librarian_view(request):
-    return render(request, 'relationship_app/librarian_view.html')
-
-@user_passes_test(is_member, login_url='/login/')
-@login_required(login_url='/login/')
-def member_view(request):
-    return render(request, 'relationship_app/member_view.html')
-
-# Task 4: Views for Book Operations with Custom Permissions
-# Placeholder for book creation view
-@permission_required('relationship_app.can_add_book', login_url='/login/')
-@login_required(login_url='/login/')
-def add_book_view(request):
-    # This would typically involve a form to add a book
-    return render(request, 'relationship_app/add_book.html') # Need to create this template
-
-# Placeholder for book editing view
-@permission_required('relationship_app.can_change_book', login_url='/login/')
-@login_required(login_url='/login/')
-def edit_book_view(request, pk):
-    book = get_object_or_404(Book, pk=pk)
-    # This would typically involve a form to edit a book
-    return render(request, 'relationship_app/edit_book.html', {'book': book}) # Need to create this template
-
-# Placeholder for book deletion view
-@permission_required('relationship_app.can_delete_book', login_url='/login/')
-@login_required(login_url='/login/')
-def delete_book_view(request, pk):
-    book = get_object_or_404(Book, pk=pk)
-    # This would typically involve a confirmation for deletion
-    if request.method == 'POST':
-        book.delete()
-        messages.success(request, 'Book deleted successfully.')
-        return redirect('list_books')
-    return render(request, 'relationship_app/delete_book_confirm.html', {'book': book}) # Need to create this template
-EOF
-
-# Add basic content to urls.py
-cat <<EOF > "urls.py"
-from django.urls import path
-from . import views
-from .views import LibraryDetailView # For class-based view
-
-urlpatterns = [
-    # Task 1: Book and Library Views
-    path('books/', views.list_books, name='list_books'),
-    path('libraries/<int:pk>/', LibraryDetailView.as_view(), name='library_detail'),
-    path('', views.list_books, name='home'), # A simple home page
-
-    # Task 2: User Authentication
-    path('register/', views.register_view, name='register'),
-    path('login/', views.login_view, name='login'),
-    path('logout/', views.logout_view, name='logout'),
-
-    # Task 3: Role-Based Access Control Views
-    path('admin-dashboard/', views.admin_view, name='admin_dashboard'),
-    path('librarian-dashboard/', views.librarian_view, name='librarian_dashboard'),
-    path('member-dashboard/', views.member_view, name='member_dashboard'),
-
-    # Task 4: Custom Permissions Views (placeholders)
-    path('books/add/', views.add_book_view, name='add_book'),
-    path('books/<int:pk>/edit/', views.edit_book_view, name='edit_book'),
-    path('books/<int:pk>/delete/', views.delete_book_view, name='delete_book'),
-]
-EOF
-
-# Add basic content to query_samples.py
-cat <<EOF > "query_samples.py"
-import os
-import django
-
-# Setup Django environment
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', '$PROJECT_DIR.settings')
-django.setup()
-
-from $APP_DIR.models import Author, Book, Library, Librarian, User, UserProfile
-
-def run_queries():
-    print("--- Running Sample Queries ---")
-
-    # Clear existing data for a clean run (optional, for testing)
-    Author.objects.all().delete()
-    Book.objects.all().delete()
-    Library.objects.all().delete()
-    Librarian.objects.all().delete()
-    User.objects.filter(is_superuser=False).delete() # Don't delete superuser
-
-    # Create sample data
-    author1 = Author.objects.create(name="Jane Austen")
-    author2 = Author.objects.create(name="George Orwell")
-
-    book1 = Book.objects.create(title="Pride and Prejudice", author=author1, publication_year=1813)
-    book2 = Book.objects.create(title="1984", author=author2, publication_year=1949)
-    book3 = Book.objects.create(title="Sense and Sensibility", author=author1, publication_year=1811)
-
-    library1 = Library.objects.create(name="Central Library")
-    library1.books.add(book1, book2)
-
-    library2 = Library.objects.create(name="Community Bookshelf")
-    library2.books.add(book3)
-
-    librarian1 = Librarian.objects.create(name="Alice Smith", library=library1)
-    librarian2 = Librarian.objects.create(name="Bob Johnson", library=library2)
-
-    # Create test users (profiles created by signal)
-    user_admin = User.objects.create_user(username='admin_user', email='admin@example.com', password='password123')
-    user_admin.is_staff = True # Needed for admin panel access
-    user_admin.is_superuser = True # Make this user a superuser for initial setup
-    user_admin.save()
-    user_admin.userprofile.role = 'Admin'
-    user_admin.userprofile.save()
-
-    user_librarian = User.objects.create_user(username='librarian_user', email='librarian@example.com', password='password123')
-    user_librarian.userprofile.role = 'Librarian'
-    user_librarian.userprofile.save()
-
-    user_member = User.objects.create_user(username='member_user', email='member@example.com', password='password123')
-    user_member.userprofile.role = 'Member'
-    user_member.userprofile.save()
-
-
-    # --- Task 0: Implement Sample Queries ---
-
-    print("\nQuery 1: All books by a specific author (Jane Austen)")
-    jane_austen_books = Book.objects.filter(author=author1)
-    for book in jane_austen_books:
-        print(f"- {book.title} by {book.author.name}")
-
-    print("\nQuery 2: All books in a library (Central Library)")
-    central_library_books = library1.books.all()
-    for book in central_library_books:
-        print(f"- {book.title} by {book.author.name}")
-
-    print("\nQuery 3: Retrieve the librarian for a library (Central Library)")
-    central_librarian = library1.librarian
-    print(f"- The librarian for Central Library is: {central_librarian.name}")
-
-    print("\n--- Sample Data Created and Queries Executed ---")
-
-if __name__ == "__main__":
-    run_queries()
-EOF
-
-# 5. Create templates directory structure
-echo "Creating templates directory structure: templates/$APP_DIR/"
-mkdir -p "templates/$APP_DIR"
-
-# 6. Create HTML template files with content
-echo "Creating HTML template files..."
-
-# list_books.html
-cat <<EOF > "templates/$APP_DIR/list_books.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>List of Books</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        h1 { color: #0056b3; }
-        ul { list-style-type: none; padding: 0; }
-        li { background-color: #fff; border: 1px solid #ddd; margin-bottom: 5px; padding: 10px; border-radius: 5px; }
-        .nav-links a { margin-right: 15px; text-decoration: none; color: #007bff; }
-        .nav-links a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <div class="nav-links">
-        <a href="{% url 'list_books' %}">All Books</a> |
-        <a href="{% url 'register' %}">Register</a> |
-        {% if user.is_authenticated %}
-            <a href="{% url 'logout' %}">Logout ({{ user.username }})</a> |
-            {% if user.userprofile.role == 'Admin' %}<a href="{% url 'admin_dashboard' %}">Admin Dashboard</a> |{% endif %}
-            {% if user.userprofile.role == 'Librarian' %}<a href="{% url 'librarian_dashboard' %}">Librarian Dashboard</a> |{% endif %}
-            {% if user.userprofile.role == 'Member' %}<a href="{% url 'member_dashboard' %}">Member Dashboard</a> |{% endif %}
-            <a href="{% url 'add_book' %}">Add Book</a>
-        {% else %}
-            <a href="{% url 'login' %}">Login</a>
-        {% endif %}
-    </div>
-    <h1>Books Available:</h1>
-    <ul>
-        {% for book in books %}
-        <li>
-            {{ book.title }} by {{ book.author.name }} (Published {{ book.publication_year }})
-            {% if user.is_authenticated and user.has_perm 'relationship_app.can_change_book' %}
-                <a href="{% url 'edit_book' book.pk %}" style="margin-left: 10px; color: green;">Edit</a>
-            {% endif %}
-            {% if user.is_authenticated and user.has_perm 'relationship_app.can_delete_book' %}
-                <a href="{% url 'delete_book' book.pk %}" style="color: red;">Delete</a>
-            {% endif %}
-        </li>
-        {% empty %}
-        <li>No books found.</li>
-        {% endfor %}
-    </ul>
-</body>
-</html>
-EOF
-
-# library_detail.html
-cat <<EOF > "templates/$APP_DIR/library_detail.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Library Detail</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        h1, h2 { color: #0056b3; }
-        ul { list-style-type: none; padding: 0; }
-        li { background-color: #fff; border: 1px solid #ddd; margin-bottom: 5px; padding: 10px; border-radius: 5px; }
-        a { color: #007bff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <a href="{% url 'list_books' %}">Back to Books</a>
-    <h1>Library: {{ library.name }}</h1>
-    <h2>Books in Library:</h2>
-    <ul>
-        {% for book in library.books.all %}
-        <li>{{ book.title }} by {{ book.author.name }} (Published {{ book.publication_year }})</li>
-        {% endfor %}
-    </ul>
-</body>
-</html>
-EOF
-
-# login.html
-cat <<EOF > "templates/$APP_DIR/login.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Login</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        h1 { color: #0056b3; }
-        form { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 400px; margin: 20px auto; }
-        p { margin-bottom: 10px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"], input[type="password"] { width: calc(100% - 22px); padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; }
-        button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
-        button:hover { background-color: #0056b3; }
-        a { color: #007bff; text-decoration: none; display: block; text-align: center; margin-top: 10px; }
-        a:hover { text-decoration: underline; }
-        .errorlist { color: red; list-style-type: none; padding: 0; margin-top: -10px; margin-bottom: 10px; }
-    </style>
-</head>
-<body>
-    <h1>Login</h1>
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        {% if messages %}
-            <ul class="messages">
-                {% for message in messages %}
-                    <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
-                {% endfor %}
-            </ul>
-        {% endif %}
-        <button type="submit">Login</button>
-    </form>
-    <a href="{% url 'register' %}">Register</a>
-</body>
-</html>
-EOF
-
-# logout.html
-cat <<EOF > "templates/$APP_DIR/logout.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Logout</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; text-align: center; }
-        h1 { color: #0056b3; }
-        a { color: #007bff; text-decoration: none; margin-top: 20px; display: inline-block; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <h1>You have been logged out</h1>
-    <a href="{% url 'login' %}">Login again</a>
-</body>
-</html>
-EOF
-
-# register.html
-cat <<EOF > "templates/$APP_DIR/register.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Register</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        h1 { color: #0056b3; }
-        form { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 400px; margin: 20px auto; }
-        p { margin-bottom: 10px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"], input[type="password"], input[type="email"] { width: calc(100% - 22px); padding: 10px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; }
-        button { background-color: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
-        button:hover { background-color: #218838; }
-        .errorlist { color: red; list-style-type: none; padding: 0; margin-top: -10px; margin-bottom: 10px; }
-    </style>
-</head>
-<body>
-    <h1>Register</h1>
-    <form method="post">
-        {% csrf_token %}
-        {{ form.as_p }}
-        {% if messages %}
-            <ul class="messages">
-                {% for message in messages %}
-                    <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
-                {% endfor %}
-            </ul>
-        {% endif %}
-        <button type="submit">Register</button>
-    </form>
-</body>
-</html>
-EOF
-
-# admin_view.html
-cat <<EOF > "templates/$APP_DIR/admin_view.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Admin Dashboard</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #e6f7ff; color: #333; }
-        h1 { color: #004085; }
-        p { background-color: #cce5ff; border: 1px solid #b8daff; padding: 15px; border-radius: 5px; }
-        a { color: #007bff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <h1>Welcome, Admin!</h1>
-    <p>This is the exclusive dashboard for administrators.</p>
-    <a href="{% url 'home' %}">Back to Home</a> | <a href="{% url 'logout' %}">Logout</a>
-</body>
-</html>
-EOF
-
-# librarian_view.html
-cat <<EOF > "templates/$APP_DIR/librarian_view.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Librarian Dashboard</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #e2f7e2; color: #333; }
-        h1 { color: #28a745; }
-        p { background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; }
-        a { color: #007bff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <h1>Welcome, Librarian!</h1>
-    <p>This is the dashboard for librarians, where you can manage books and users.</p>
-    <a href="{% url 'home' %}">Back to Home</a> | <a href="{% url 'logout' %}">Logout</a>
-</body>
-</html>
-EOF
-
-# member_view.html
-cat <<EOF > "templates/$APP_DIR/member_view.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Member Dashboard</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #fff3cd; color: #333; }
-        h1 { color: #856404; }
-        p { background-color: #ffeeba; border: 1px solid #ffc107; padding: 15px; border-radius: 5px; }
-        a { color: #007bff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <h1>Welcome, Member!</h1>
-    <p>This is the dashboard for members.</p>
-    <a href="{% url 'home' %}">Back to Home</a> | <a href="{% url 'logout' %}">Logout</a>
-</body>
-</html>
-EOF
-
-# add_book.html (placeholder for Task 4)
-cat <<EOF > "templates/$APP_DIR/add_book.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Add New Book</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        h1 { color: #0056b3; }
-        p { margin-bottom: 10px; }
-        a { color: #007bff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <h1>Add New Book</h1>
-    <p>This page is for adding new books. (Only accessible with 'can_add_book' permission)</p>
-    <a href="{% url 'list_books' %}">Back to Books List</a>
-</body>
-</html>
-EOF
-
-# edit_book.html (placeholder for Task 4)
-cat <<EOF > "templates/$APP_DIR/edit_book.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Edit Book</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        h1 { color: #0056b3; }
-        p { margin-bottom: 10px; }
-        a { color: #007bff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <h1>Edit Book: {{ book.title }}</h1>
-    <p>This page is for editing book details. (Only accessible with 'can_change_book' permission)</p>
-    <a href="{% url 'list_books' %}">Back to Books List</a>
-</body>
-</html>
-EOF
-
-# delete_book_confirm.html (placeholder for Task 4)
-cat <<EOF > "templates/$APP_DIR/delete_book_confirm.html"
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Confirm Delete Book</title>
-    <style>
-        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        h1 { color: #dc3545; }
-        p { margin-bottom: 15px; }
-        form { display: inline-block; }
-        button { background-color: #dc3545; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
-        button:hover { background-color: #c82333; }
-        a { color: #007bff; text-decoration: none; margin-left: 15px; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <h1>Confirm Deletion</h1>
-    <p>Are you sure you want to delete the book: "{{ book.title }}"?</p>
-    <form method="post">
-        {% csrf_token %}
-        <button type="submit">Yes, Delete</button>
-    </form>
-    <a href="{% url 'list_books' %}">Cancel</a>
-</body>
-</html>
-EOF
-
-
-echo "All directories and files have been created."
-echo "Navigate to the '$PROJECT_DIR' directory to continue your Django project."
-echo "To initialize the Django project and run migrations, you would typically run:"
-echo "  cd $PROJECT_DIR"
-echo "  python3 manage.py makemigrations $APP_DIR"
-echo "  python3 manage.py migrate"
-echo "  python3 manage.py createsuperuser (to create an admin user)"
-echo "  python3 manage.py runserver"
-
+# Summary
 echo ""
-echo "To run the sample queries for Task 0:"
-echo "  cd $APP_DIR"
-echo "  python3 query_samples.py"
-
-cd ../.. # Go back to the original directory where the script was run
+echo -e "${GREEN}🎉 Custom User Model Setup Complete!${NC}"
+echo "============================================"
+echo -e "${BLUE}Files modified/created:${NC}"
+echo "  ✅ bookshelf/models.py - Custom user model with date_of_birth and profile_photo"
+echo "  ✅ bookshelf/admin.py - Admin interface for custom user model"
+echo "  ✅ LibraryProject/settings.py - Updated AUTH_USER_MODEL setting"
+echo "  ✅ relationship_app/models.py - Updated to use custom user model"
+echo "  ✅ LibraryProject/urls.py - Added media files serving"
+echo "  ✅ requirements.txt - Added Django and Pillow dependencies"
+echo "  ✅ media/profile_photos/ - Directory for profile photos"
+echo "  ✅ MIGRATION_INSTRUCTIONS.md - Step-by-step migration guide"
+echo ""
+echo -e "${YELLOW}⚠️  IMPORTANT: Read MIGRATION_INSTRUCTIONS.md for next steps!${NC}"
+echo ""
+echo -e "${BLUE}Key Features Added:${NC}"
+echo "  🔸 CustomUser model extending AbstractUser"
+echo "  🔸 date_of_birth field (DateField)"
+echo "  🔸 profile_photo field (ImageField)"
+echo "  🔸 Custom user manager with create_user and create_superuser methods"
+echo "  🔸 Admin interface configured for new fields"
+echo "  🔸 All user model references updated"
+echo ""
+echo -e "${GREEN}Next: Follow the migration instructions to complete the setup!${NC}"
