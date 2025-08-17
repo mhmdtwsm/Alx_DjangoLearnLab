@@ -2,6 +2,7 @@
 
 # Django REST Framework Authentication & Permissions Setup Script
 # This script implements token authentication and permission classes
+#mlmlzzlz
 
 set -e  # Exit on any error
 
