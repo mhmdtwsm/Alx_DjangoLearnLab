@@ -1,11 +1,34 @@
-{% extends "base.html" %}
+{% extends "blog/base.html" %}
 {% block content %}
   <h1>{{ object.title }}</h1>
   <p>{{ object.content }}</p>
-  <p>By {{ object.author }} on {{ object.created_at }}</p>
-  {% if user == object.author %}
-    <a href="{% url 'post-update' object.pk %}">Edit</a> |
-    <a href="{% url 'post-delete' object.pk %}">Delete</a>
+  <p><small>By {{ object.author }} on {{ object.date_posted }}</small></p>
+
+  <hr>
+  <h3>Comments</h3>
+  {% for comment in object.comments.all %}
+    <div>
+      <p>{{ comment.content }}</p>
+      <small>by {{ comment.author }} on {{ comment.created_at }}</small>
+      {% if comment.author == user %}
+        <a href="{% url 'edit-comment' comment.id %}">Edit</a> |
+        <a href="{% url 'delete-comment' comment.id %}">Delete</a>
+      {% endif %}
+    </div>
+    <hr>
+  {% empty %}
+    <p>No comments yet.</p>
+  {% endfor %}
+
+  {% if user.is_authenticated %}
+    <h4>Add a Comment</h4>
+    <form action="{% url 'add-comment' object.id %}" method="POST">
+      {% csrf_token %}
+      <textarea name="content" rows="3" placeholder="Write your comment..."></textarea>
+      <br>
+      <button type="submit" class="btn btn-primary">Post Comment</button>
+    </form>
+  {% else %}
+    <p><a href="{% url 'login' %}">Login</a> to add a comment.</p>
   {% endif %}
-  <a href="{% url 'post-list' %}">Back to all posts</a>
 {% endblock %}
