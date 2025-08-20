@@ -15,8 +15,10 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "blog",  # our app
-    "taggit",  # tagging functionality
+    "taggit",
 ]
+
+INSTALLED_APPS = ["taggit"]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
