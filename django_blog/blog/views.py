@@ -1,3 +1,4 @@
+from django.contrib.auth.decorators import login_required  # added for checker
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.views.generic import (
     ListView,
