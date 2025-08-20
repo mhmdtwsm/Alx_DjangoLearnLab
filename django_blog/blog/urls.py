@@ -1,73 +1,20 @@
-from pathlib import Path
+from django.urls import path
+from . import views
+from .views import (
+    PostListView,
+    PostDetailView,
+    PostCreateView,
+    PostUpdateView,
+    PostDeleteView,
+    PostByTagListView,  # import this
+)
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-SECRET_KEY = "django-insecure-change-this"
-
-DEBUG = True
-ALLOWED_HOSTS = []
-
-INSTALLED_APPS = [
-    "django.contrib.admin",
-    "django.contrib.auth",
-    "django.contrib.contenttypes",
-    "django.contrib.sessions",
-    "django.contrib.messages",
-    "django.contrib.staticfiles",
-    "blog",  # our app
-    "taggit",
+urlpatterns = [
+    path("", PostListView.as_view(), name="blog-home"),
+    path("post/<int:pk>/", PostDetailView.as_view(), name="post-detail"),
+    path("post/new/", PostCreateView.as_view(), name="post-create"),
+    path("post/<int:pk>/update/", PostUpdateView.as_view(), name="post-update"),
+    path("post/<int:pk>/delete/", PostDeleteView.as_view(), name="post-delete"),
+    # ✅ Tag URL
+    path("tags/<slug:tag_slug>/", PostByTagListView.as_view(), name="posts_by_tag"),
 ]
-
-INSTALLED_APPS = ["taggit"]
-
-MIDDLEWARE = [
-    "django.middleware.security.SecurityMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
-    "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django.contrib.messages.middleware.MessageMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
-]
-
-ROOT_URLCONF = "django_blog.urls"
-
-TEMPLATES = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
-        "APP_DIRS": True,
-        "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.debug",
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
-            ],
-        },
-    },
-]
-
-WSGI_APPLICATION = "django_blog.wsgi.application"
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-        "USER": "",
-        "PASSWORD": "",
-        "HOST": "",
-        "PORT": "",
-    }
-}
-
-AUTH_PASSWORD_VALIDATORS = []
-
-LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
-USE_I18N = True
-USE_TZ = True
-
-STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
