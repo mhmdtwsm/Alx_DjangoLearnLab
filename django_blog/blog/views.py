@@ -9,9 +9,9 @@ from django.views.generic import (
 )
 from django.urls import reverse_lazy
 from .models import Post, Comment
+from .forms import CommentForm
 
 
-# ===================== POST CRUD =====================
 class PostListView(ListView):
     model = Post
     template_name = "blog/post_list.html"
@@ -56,22 +56,25 @@ class PostDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
         return self.request.user == post.author
 
 
-# ===================== COMMENT CRUD =====================
 class CommentCreateView(LoginRequiredMixin, CreateView):
     model = Comment
-    fields = ["content"]
+    form_class = CommentForm
     template_name = "blog/comment_form.html"
 
     def form_valid(self, form):
         form.instance.author = self.request.user
-        form.instance.post_id = self.kwargs["pk"]  # link to post
+        form.instance.post_id = self.kwargs["pk"]
         return super().form_valid(form)
 
 
 class CommentUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     model = Comment
-    fields = ["content"]
+    form_class = CommentForm
     template_name = "blog/comment_form.html"
+
+    def form_valid(self, form):
+        form.instance.author = self.request.user
+        return super().form_valid(form)
 
     def test_func(self):
         comment = self.get_object()
@@ -80,10 +83,8 @@ class CommentUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
 
 class CommentDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     model = Comment
+    success_url = reverse_lazy("post-list")
     template_name = "blog/comment_confirm_delete.html"
-
-    def get_success_url(self):
-        return reverse_lazy("post-detail", kwargs={"pk": self.object.post.pk})
 
     def test_func(self):
         comment = self.get_object()
