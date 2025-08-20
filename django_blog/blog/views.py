@@ -8,6 +8,7 @@ from django.views.generic import (
     DeleteView,
 )
 from django.urls import reverse_lazy
+from django.db.models import Q
 from .models import Post, Comment
 from .forms import CommentForm
 
@@ -15,6 +16,17 @@ from .forms import CommentForm
 class PostListView(ListView):
     model = Post
     template_name = "blog/post_list.html"
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        query = self.request.GET.get("q")
+        if query:
+            queryset = queryset.filter(
+                Q(title__icontains=query)
+                | Q(content__icontains=query)
+                | Q(tags__name__icontains=query)
+            ).distinct()
+        return queryset
 
 
 class PostDetailView(DetailView):
@@ -24,7 +36,7 @@ class PostDetailView(DetailView):
 
 class PostCreateView(LoginRequiredMixin, CreateView):
     model = Post
-    fields = ["title", "content"]
+    fields = ["title", "content", "tags"]  # include tags so they can be added
     template_name = "blog/post_form.html"
 
     def form_valid(self, form):
@@ -34,7 +46,7 @@ class PostCreateView(LoginRequiredMixin, CreateView):
 
 class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     model = Post
-    fields = ["title", "content"]
+    fields = ["title", "content", "tags"]
     template_name = "blog/post_form.html"
 
     def form_valid(self, form):
