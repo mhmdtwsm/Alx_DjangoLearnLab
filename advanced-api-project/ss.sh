@@ -1,965 +1,716 @@
 #!/bin/bash
 
-# Django REST Framework Generic Views Setup Script
-# This script implements custom views and generic views with permissions
+# Django REST Framework Filtering, Searching, and Ordering Implementation Script
+# Streamlined version for existing Django projects
 
 set -e  # Exit on any error
 
-echo "🚀 Setting up Django REST Framework Generic Views..."
-echo "Current directory: $(pwd)"
+# Colors for better output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Helper functions
+print_header() {
+    echo -e "\n${BLUE}===================================================${NC}"
+    echo -e "${BLUE}$1${NC}"
+    echo -e "${BLUE}===================================================${NC}"
+}
+
+print_step() {
+    echo -e "\n${CYAN}➤ $1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+}
+
+print_info() {
+    echo -e "${PURPLE}ℹ $1${NC}"
+}
 
 # Check if we're in the correct directory
-if [[ ! $(pwd) =~ advanced-api-project$ ]]; then
-    echo "❌ Error: Please run this script from the advanced-api-project directory"
-    echo "Expected: /home/mhmd/study/alx/Alx_DjangoLearnLab/advanced-api-project"
-    exit 1
-fi
+check_directory() {
+    print_step "Checking project directory structure..."
+    
+    if [[ ! -f "manage.py" ]]; then
+        print_error "manage.py not found. Please run this script from the advanced-api-project root directory."
+        exit 1
+    fi
+    
+    if [[ ! -d "advanced_api_project" ]]; then
+        print_error "advanced_api_project directory not found."
+        exit 1
+    fi
+    
+    if [[ ! -d "api" ]]; then
+        print_error "api directory not found."
+        exit 1
+    fi
+    
+    print_success "Directory structure verified"
+}
 
-echo "✅ Directory check passed!"
+# Install django-filter
+install_django_filter() {
+    print_header "STEP 1: INSTALLING DJANGO-FILTER"
+    
+    print_step "Adding django-filter to requirements.txt..."
+    if ! grep -q "django-filter" requirements.txt 2>/dev/null; then
+        echo "django-filter>=23.2" >> requirements.txt
+        print_success "Added django-filter to requirements.txt"
+    else
+        print_warning "django-filter already exists in requirements.txt"
+    fi
+    
+    print_step "Installing django-filter..."
+    # Check if we're in venv
+    if [[ "$VIRTUAL_ENV" != "" ]]; then
+        pip install django-filter>=23.2
+        print_success "django-filter installed successfully"
+    else
+        print_warning "Virtual environment not detected. Installing system-wide..."
+        pip3 install django-filter>=23.2
+        print_success "django-filter installed"
+    fi
+}
 
-# Check if virtual environment exists
-if [ ! -d "venv" ]; then
-    echo "❌ Error: Virtual environment not found. Please run the initial setup script first."
-    exit 1
-fi
+# Update Django settings
+update_settings() {
+    print_header "STEP 2: UPDATING DJANGO SETTINGS"
+    
+    print_step "Backing up settings.py..."
+    cp advanced_api_project/settings.py advanced_api_project/settings.py.backup
+    print_success "Settings backup created"
+    
+    print_step "Adding django_filters to INSTALLED_APPS..."
+    if ! grep -q "django_filters" advanced_api_project/settings.py; then
+        # Use Python to properly modify the INSTALLED_APPS
+        python3 << 'EOF'
+import re
 
-# Activate virtual environment
-echo "🔄 Activating virtual environment..."
-source venv/bin/activate
+# Read the settings file
+with open('advanced_api_project/settings.py', 'r') as f:
+    content = f.read()
 
-# Verify we're in the virtual environment
-if [[ "$VIRTUAL_ENV" != "" ]]; then
-    echo "✅ Virtual environment activated: $VIRTUAL_ENV"
-else
-    echo "❌ Failed to activate virtual environment"
-    exit 1
-fi
+# Add django_filters to INSTALLED_APPS if not already present
+if "'django_filters'" not in content and '"django_filters"' not in content:
+    # Find INSTALLED_APPS and add django_filters
+    pattern = r'(INSTALLED_APPS\s*=\s*\[)(.*?)(\])'
+    
+    def replace_apps(match):
+        start, apps_content, end = match.groups()
+        # Add django_filters before the closing bracket
+        if apps_content.strip():
+            # Add comma after last app if not present
+            apps_content = apps_content.rstrip()
+            if not apps_content.endswith(','):
+                apps_content += ','
+            return f"{start}{apps_content}\n    'django_filters',{end}"
+        else:
+            return f"{start}\n    'django_filters',{end}"
+    
+    content = re.sub(pattern, replace_apps, content, flags=re.DOTALL)
 
-# Step 1: Create comprehensive views.py with generic views
-echo "📝 Creating comprehensive views.py with generic views..."
-cat > api/views.py << 'EOF'
+# Write the modified content back
+with open('advanced_api_project/settings.py', 'w') as f:
+    f.write(content)
+
+print("django_filters added to INSTALLED_APPS")
+EOF
+        print_success "Added django_filters to INSTALLED_APPS"
+    else
+        print_warning "django_filters already in INSTALLED_APPS"
+    fi
+    
+    print_step "Adding REST_FRAMEWORK configuration..."
+    if ! grep -q "REST_FRAMEWORK" advanced_api_project/settings.py; then
+        cat >> advanced_api_project/settings.py << 'EOF'
+
+# Django REST Framework Configuration for Filtering, Searching, and Ordering
+REST_FRAMEWORK = {
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+}
+EOF
+        print_success "Added REST_FRAMEWORK configuration"
+    else
+        print_warning "REST_FRAMEWORK configuration already exists"
+    fi
+}
+
+# Create filters.py
+create_filters() {
+    print_header "STEP 3: CREATING CUSTOM FILTERS"
+    
+    print_step "Creating api/filters.py..."
+    cat > api/filters.py << 'EOF'
+"""
+Custom filters for the Book API.
+
+This module defines filtering capabilities for the Book model,
+allowing users to filter books by various attributes with different
+lookup types for enhanced API usability.
+"""
+
+import django_filters
+from .models import Book
+
+
+class BookFilter(django_filters.FilterSet):
+    """
+    Comprehensive filter set for the Book model.
+    
+    Provides multiple filtering options:
+    - Title filtering (exact match and case-insensitive contains)
+    - Author filtering (exact match and case-insensitive contains)
+    - Publication year filtering (exact, range, greater than, less than)
+    """
+    
+    # Title filters
+    title = django_filters.CharFilter(
+        lookup_expr='icontains',
+        help_text="Filter by title containing the specified text (case-insensitive)"
+    )
+    title_exact = django_filters.CharFilter(
+        field_name='title',
+        lookup_expr='exact',
+        help_text="Filter by exact title match"
+    )
+    
+    # Author filters
+    author = django_filters.CharFilter(
+        lookup_expr='icontains',
+        help_text="Filter by author name containing the specified text (case-insensitive)"
+    )
+    author_exact = django_filters.CharFilter(
+        field_name='author',
+        lookup_expr='exact',
+        help_text="Filter by exact author name match"
+    )
+    
+    # Publication year filters
+    publication_year = django_filters.NumberFilter(
+        help_text="Filter by exact publication year"
+    )
+    publication_year_gte = django_filters.NumberFilter(
+        field_name='publication_year',
+        lookup_expr='gte',
+        help_text="Filter books published in or after the specified year"
+    )
+    publication_year_lte = django_filters.NumberFilter(
+        field_name='publication_year',
+        lookup_expr='lte',
+        help_text="Filter books published in or before the specified year"
+    )
+    publication_year_range = django_filters.RangeFilter(
+        field_name='publication_year',
+        help_text="Filter books published within a year range"
+    )
+    
+    class Meta:
+        model = Book
+        fields = {
+            'title': ['exact', 'icontains'],
+            'author': ['exact', 'icontains'], 
+            'publication_year': ['exact', 'gte', 'lte', 'range'],
+        }
+EOF
+    
+    print_success "Created comprehensive filters in api/filters.py"
+}
+
+# Update views.py with filtering, searching, and ordering
+update_views() {
+    print_header "STEP 4: UPDATING API VIEWS"
+    
+    print_step "Backing up current views.py..."
+    cp api/views.py api/views.py.backup
+    print_success "Views backup created"
+    
+    print_step "Updating views.py with filtering, searching, and ordering..."
+    cat > api/views.py << 'EOF'
+"""
+Enhanced API Views with Filtering, Searching, and Ordering.
+
+This module provides comprehensive API views for the Book model with
+advanced query capabilities including filtering, searching, and ordering.
+"""
+
 from rest_framework import generics, status
-from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.filters import SearchFilter, OrderingFilter
 from django.shortcuts import get_object_or_404
+
 from .models import Book
 from .serializers import BookSerializer
-
-# API Home view for testing
-@api_view(['GET'])
-def api_home(request):
-    """
-    API Home endpoint that provides information about available endpoints.
-    """
-    return Response({
-        'message': 'Welcome to the Advanced API Project!',
-        'status': 'Generic Views implemented',
-        'endpoints': {
-            'books_list': '/api/books/',
-            'book_detail': '/api/books/<id>/',
-            'book_create': '/api/books/create/',
-            'book_update': '/api/books/<id>/update/',
-            'book_delete': '/api/books/<id>/delete/',
-        },
-        'authentication': 'Token authentication required for write operations',
-        'permissions': 'Read-only for anonymous users, full CRUD for authenticated users'
-    })
+from .filters import BookFilter
 
 
-class BookListView(generics.ListAPIView):
+class BookListView(generics.ListCreateAPIView):
     """
-    Generic ListView for retrieving all books.
-    Allows read-only access to both authenticated and unauthenticated users.
+    Enhanced Book List View with filtering, searching, and ordering.
+    
+    Features:
+    - **Filtering**: Filter by title, author, and publication_year with various lookup types
+    - **Searching**: Search across title and author fields simultaneously  
+    - **Ordering**: Sort results by any Book model field
+    - **Pagination**: Paginated results for better performance
+    
+    ## Filtering Options:
+    - `title`: Case-insensitive partial match in title
+    - `title_exact`: Exact title match
+    - `author`: Case-insensitive partial match in author name
+    - `author_exact`: Exact author name match
+    - `publication_year`: Exact year match
+    - `publication_year_gte`: Books published in or after specified year
+    - `publication_year_lte`: Books published in or before specified year
+    
+    ## Search Functionality:
+    - `search`: Search across title and author fields
+    
+    ## Ordering Options:
+    - `ordering`: Order by any field (prefix with '-' for descending)
+    - Available fields: title, author, publication_year, id
+    - Multiple fields: separate with commas (e.g., 'author,title')
+    
+    ## Usage Examples:
+    - `/api/books/?title=django` - Books with 'django' in title
+    - `/api/books/?author=smith&publication_year_gte=2020` - Books by authors containing 'smith' from 2020 onwards
+    - `/api/books/?search=python&ordering=-publication_year` - Search 'python', newest first
+    - `/api/books/?ordering=author,title` - Order by author, then title
     """
+    
     queryset = Book.objects.all()
     serializer_class = BookSerializer
     permission_classes = [IsAuthenticatedOrReadOnly]
     
-    def get_queryset(self):
+    # Configure filter backends
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    
+    # Filtering configuration
+    filterset_class = BookFilter
+    
+    # Search configuration
+    search_fields = ['title', 'author']
+    
+    # Ordering configuration
+    ordering_fields = ['title', 'author', 'publication_year', 'id']
+    ordering = ['title']  # Default ordering
+    
+    def list(self, request, *args, **kwargs):
         """
-        Optionally filter books by title or author using query parameters.
-        Example: /api/books/?title=django or /api/books/?author=smith
+        List books with applied filters, search, and ordering.
         """
-        queryset = Book.objects.all()
-        title = self.request.query_params.get('title')
-        author = self.request.query_params.get('author')
+        queryset = self.filter_queryset(self.get_queryset())
         
-        if title is not None:
-            queryset = queryset.filter(title__icontains=title)
-        if author is not None:
-            queryset = queryset.filter(author__icontains=author)
-            
-        return queryset.order_by('title')
-
-
-class BookDetailView(generics.RetrieveAPIView):
-    """
-    Generic DetailView for retrieving a single book by ID.
-    Allows read-only access to both authenticated and unauthenticated users.
-    """
-    queryset = Book.objects.all()
-    serializer_class = BookSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-    lookup_field = 'pk'
-    
-    def get_object(self):
-        """
-        Custom method to get object with proper error handling.
-        """
-        pk = self.kwargs.get('pk')
-        return get_object_or_404(Book, pk=pk)
-
-
-class BookCreateView(generics.CreateAPIView):
-    """
-    Generic CreateView for adding a new book.
-    Requires authentication to create new books.
-    """
-    queryset = Book.objects.all()
-    serializer_class = BookSerializer
-    permission_classes = [IsAuthenticated]
-    
-    def perform_create(self, serializer):
-        """
-        Custom create method to add additional functionality.
-        You can add custom logic here, such as setting the created_by field.
-        """
-        # Example: If you had a created_by field, you could set it here
-        # serializer.save(created_by=self.request.user)
-        serializer.save()
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
     def create(self, request, *args, **kwargs):
         """
-        Override create method to provide custom response format.
+        Create a new book.
         """
         serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            self.perform_create(serializer)
-            return Response({
-                'message': 'Book created successfully',
-                'data': serializer.data
-            }, status=status.HTTP_201_CREATED)
-        return Response({
-            'message': 'Failed to create book',
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
-class BookUpdateView(generics.UpdateAPIView):
+class BookDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
-    Generic UpdateView for modifying an existing book.
-    Requires authentication to update books.
-    Supports both PUT (full update) and PATCH (partial update).
+    Retrieve, update, or delete a specific book.
     """
+    
     queryset = Book.objects.all()
     serializer_class = BookSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedOrReadOnly]
     lookup_field = 'pk'
     
-    def get_object(self):
+    def retrieve(self, request, *args, **kwargs):
         """
-        Custom method to get object with proper error handling.
+        Retrieve a specific book.
         """
-        pk = self.kwargs.get('pk')
-        return get_object_or_404(Book, pk=pk)
-    
-    def perform_update(self, serializer):
-        """
-        Custom update method to add additional functionality.
-        """
-        serializer.save()
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
     
     def update(self, request, *args, **kwargs):
         """
-        Override update method to provide custom response format.
+        Update a book.
         """
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
         
-        if serializer.is_valid():
-            self.perform_update(serializer)
-            return Response({
-                'message': 'Book updated successfully',
-                'data': serializer.data
-            })
-        return Response({
-            'message': 'Failed to update book',
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-
-class BookDeleteView(generics.DestroyAPIView):
-    """
-    Generic DeleteView for removing a book.
-    Requires authentication to delete books.
-    """
-    queryset = Book.objects.all()
-    serializer_class = BookSerializer
-    permission_classes = [IsAuthenticated]
-    lookup_field = 'pk'
-    
-    def get_object(self):
-        """
-        Custom method to get object with proper error handling.
-        """
-        pk = self.kwargs.get('pk')
-        return get_object_or_404(Book, pk=pk)
+        if getattr(instance, '_prefetched_objects_cache', None):
+            instance._prefetched_objects_cache = {}
+        
+        return Response(serializer.data)
     
     def destroy(self, request, *args, **kwargs):
         """
-        Override destroy method to provide custom response format.
+        Delete a book.
         """
         instance = self.get_object()
-        book_title = instance.title
         self.perform_destroy(instance)
-        return Response({
-            'message': f'Book "{book_title}" deleted successfully'
-        }, status=status.HTTP_200_OK)
-
-
-# Alternative: Combined CRUD views using mixins (commented out for reference)
-"""
-from rest_framework import mixins
-
-class BookListCreateView(mixins.ListModelMixin,
-                        mixins.CreateModelMixin,
-                        generics.GenericAPIView):
-    
-    queryset = Book.objects.all()
-    serializer_class = BookSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-    
-    def get(self, request, *args, **kwargs):
-        return self.list(request, *args, **kwargs)
-    
-    def post(self, request, *args, **kwargs):
-        return self.create(request, *args, **kwargs)
-
-
-class BookDetailUpdateDeleteView(mixins.RetrieveModelMixin,
-                                mixins.UpdateModelMixin,
-                                mixins.DestroyModelMixin,
-                                generics.GenericAPIView):
-    
-    queryset = Book.objects.all()
-    serializer_class = BookSerializer
-    permission_classes = [IsAuthenticatedOrReadOnly]
-    
-    def get(self, request, *args, **kwargs):
-        return self.retrieve(request, *args, **kwargs)
-    
-    def put(self, request, *args, **kwargs):
-        return self.update(request, *args, **kwargs)
-    
-    def patch(self, request, *args, **kwargs):
-        return self.partial_update(request, *args, **kwargs)
-    
-    def delete(self, request, *args, **kwargs):
-        return self.destroy(request, *args, **kwargs)
-"""
+        return Response(status=status.HTTP_204_NO_CONTENT)
 EOF
-
-echo "✅ views.py created with comprehensive generic views"
-
-# Step 2: Create URL patterns
-echo "🔗 Creating URL patterns for the views..."
-cat > api/urls.py << 'EOF'
-from django.urls import path
-from . import views
-
-# URL patterns for the API endpoints
-urlpatterns = [
-    # API Home
-    path('', views.api_home, name='api_home'),
     
-    # Book CRUD endpoints using separate generic views
-    path('books/', views.BookListView.as_view(), name='book_list'),
-    path('books/<int:pk>/', views.BookDetailView.as_view(), name='book_detail'),
-    path('books/create/', views.BookCreateView.as_view(), name='book_create'),
-    path('books/<int:pk>/update/', views.BookUpdateView.as_view(), name='book_update'),
-    path('books/<int:pk>/delete/', views.BookDeleteView.as_view(), name='book_delete'),
-]
-
-# URL pattern names explanation:
-# - book_list: GET /api/books/ - List all books (with optional filtering)
-# - book_detail: GET /api/books/<id>/ - Retrieve a specific book
-# - book_create: POST /api/books/create/ - Create a new book (auth required)
-# - book_update: PUT/PATCH /api/books/<id>/update/ - Update a book (auth required)
-# - book_delete: DELETE /api/books/<id>/delete/ - Delete a book (auth required)
-EOF
-
-echo "✅ URL patterns created"
-
-# Step 3: Update settings.py to include authentication
-echo "⚙️  Updating settings.py for authentication..."
-python << 'EOF'
-import re
-
-# Read the settings file
-settings_file = 'advanced_api_project/settings.py'
-with open(settings_file, 'r') as f:
-    content = f.read()
-
-# Add REST_FRAMEWORK configuration if not present
-rest_framework_config = """
-# Django REST Framework Configuration
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
-    ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 20,
-    'DEFAULT_FILTER_BACKENDS': [
-        'rest_framework.filters.SearchFilter',
-        'rest_framework.filters.OrderingFilter',
-    ],
-    'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
-    ],
+    print_success "Updated views.py with comprehensive filtering, searching, and ordering"
 }
+
+# Create comprehensive test script
+create_test_script() {
+    print_header "STEP 5: CREATING TEST SCRIPT"
+    
+    print_step "Creating test script for filtering functionality..."
+    cat > test_filtering.py << 'EOF'
+#!/usr/bin/env python3
 """
-
-# Check if REST_FRAMEWORK is already configured
-if 'REST_FRAMEWORK' not in content:
-    content += rest_framework_config
-    
-    # Add authtoken to INSTALLED_APPS if not present
-    if "'rest_framework.authtoken'" not in content:
-        pattern = r"(INSTALLED_APPS\s*=\s*\[)(.*?)(\])"
-        
-        def replace_apps(match):
-            start = match.group(1)
-            apps = match.group(2)
-            end = match.group(3)
-            
-            if "'rest_framework.authtoken'" not in apps:
-                apps += "\n    'rest_framework.authtoken',"
-            
-            return start + apps + "\n" + end
-        
-        content = re.sub(pattern, replace_apps, content, flags=re.DOTALL)
-    
-    # Write back to file
-    with open(settings_file, 'w') as f:
-        f.write(content)
-    
-    print("✅ Updated settings.py with REST_FRAMEWORK configuration")
-else:
-    print("ℹ️  REST_FRAMEWORK already configured")
-EOF
-
-# Step 4: Update main URLs to include auth endpoints
-echo "🔗 Updating main URL configuration..."
-cat > advanced_api_project/urls.py << 'EOF'
-from django.contrib import admin
-from django.urls import path, include
-from rest_framework.authtoken.views import obtain_auth_token
-
-urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/', include('api.urls')),
-    path('api-token-auth/', obtain_auth_token, name='api_token_auth'),
-    path('api-auth/', include('rest_framework.urls')),  # Login/logout for browsable API
-]
-EOF
-
-echo "✅ Main URLs updated with authentication endpoints"
-
-# Step 5: Create migrations for authtoken
-echo "🗄️  Creating and applying migrations..."
-python manage.py makemigrations
-python manage.py migrate
-
-# Step 6: Create test data and management command
-echo "📚 Creating test data management command..."
-mkdir -p api/management
-mkdir -p api/management/commands
-touch api/management/__init__.py
-touch api/management/commands/__init__.py
-
-cat > api/management/commands/create_test_data.py << 'EOF'
-from django.core.management.base import BaseCommand
-from django.contrib.auth.models import User
-from rest_framework.authtoken.models import Token
-from api.models import Book
-
-class Command(BaseCommand):
-    help = 'Create test data for the API'
-
-    def handle(self, *args, **options):
-        # Create test users
-        if not User.objects.filter(username='testuser').exists():
-            user = User.objects.create_user(
-                username='testuser',
-                email='test@example.com',
-                password='testpass123'
-            )
-            Token.objects.create(user=user)
-            self.stdout.write(
-                self.style.SUCCESS(f'Created test user: testuser (token: {user.auth_token.key})')
-            )
-        
-        # Create test books
-        test_books = [
-            {'title': 'Django for Beginners', 'author': 'William Vincent'},
-            {'title': 'Two Scoops of Django', 'author': 'Daniel Roy Greenfeld'},
-            {'title': 'Django REST Framework Tutorial', 'author': 'John Doe'},
-            {'title': 'Python Crash Course', 'author': 'Eric Matthes'},
-            {'title': 'Automate the Boring Stuff', 'author': 'Al Sweigart'},
-        ]
-        
-        for book_data in test_books:
-            book, created = Book.objects.get_or_create(**book_data)
-            if created:
-                self.stdout.write(
-                    self.style.SUCCESS(f'Created book: {book.title}')
-                )
-        
-        self.stdout.write(
-            self.style.SUCCESS('Test data creation completed!')
-        )
-EOF
-
-# Step 7: Create comprehensive test script
-echo "🧪 Creating test script for API endpoints..."
-cat > test_api.py << 'EOF'
-#!/usr/bin/env python
-"""
-API Testing Script for Django REST Framework Generic Views
-This script tests all CRUD operations with and without authentication.
+Test script for Django REST Framework filtering, searching, and ordering.
 """
 
 import requests
 import json
 import sys
+from urllib.parse import urlencode
 
-BASE_URL = 'http://127.0.0.1:8000/api'
-AUTH_URL = 'http://127.0.0.1:8000/api-token-auth/'
+BASE_URL = "http://127.0.0.1:8000"
+API_BASE = f"{BASE_URL}/api"
 
-def get_auth_token():
-    """Get authentication token for testuser"""
-    data = {
-        'username': 'testuser',
-        'password': 'testpass123'
-    }
+def print_header(text):
+    print(f"\n{'='*50}")
+    print(f"{text.center(50)}")
+    print('='*50)
+
+def print_success(message):
+    print(f"✓ {message}")
+
+def print_error(message):
+    print(f"✗ {message}")
+
+def make_request(method, endpoint, params=None):
+    """Make HTTP request with error handling."""
+    url = f"{API_BASE}{endpoint}"
+    if params:
+        url += f"?{urlencode(params)}"
+    
     try:
-        response = requests.post(AUTH_URL, data=data)
-        if response.status_code == 200:
-            return response.json()['token']
-        else:
-            print(f"Failed to get token: {response.status_code}")
-            return None
-    except requests.exceptions.RequestException as e:
-        print(f"Error getting token: {e}")
+        response = requests.request(method, url)
+        return response
+    except requests.exceptions.ConnectionError:
+        print_error("Cannot connect to Django server. Make sure it's running on http://127.0.0.1:8000")
+        sys.exit(1)
+    except Exception as e:
+        print_error(f"Request failed: {e}")
         return None
 
-def test_list_books():
-    """Test listing all books (no auth required)"""
-    print("\n📚 Testing Book List (GET /api/books/)")
-    try:
-        response = requests.get(f"{BASE_URL}/books/")
-        print(f"Status Code: {response.status_code}")
-        if response.status_code == 200:
-            books = response.json()
-            print(f"Found {len(books)} books")
-            for book in books[:3]:  # Show first 3
-                print(f"  - {book['title']} by {book['author']}")
-        else:
-            print(f"Error: {response.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-
-def test_book_detail(book_id=1):
-    """Test getting a specific book (no auth required)"""
-    print(f"\n📖 Testing Book Detail (GET /api/books/{book_id}/)")
-    try:
-        response = requests.get(f"{BASE_URL}/books/{book_id}/")
-        print(f"Status Code: {response.status_code}")
-        if response.status_code == 200:
-            book = response.json()
-            print(f"Book: {book['title']} by {book['author']}")
-        else:
-            print(f"Error: {response.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-
-def test_create_book(token):
-    """Test creating a new book (auth required)"""
-    print("\n➕ Testing Book Creation (POST /api/books/create/)")
-    headers = {'Authorization': f'Token {token}'}
-    data = {
-        'title': 'Test Book from API',
-        'author': 'API Tester'
-    }
-    try:
-        response = requests.post(f"{BASE_URL}/books/create/", json=data, headers=headers)
-        print(f"Status Code: {response.status_code}")
-        if response.status_code == 201:
-            result = response.json()
-            print(f"Created: {result}")
-            return result['data']['id']
-        else:
-            print(f"Error: {response.text}")
-            return None
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-        return None
-
-def test_update_book(book_id, token):
-    """Test updating a book (auth required)"""
-    print(f"\n✏️  Testing Book Update (PUT /api/books/{book_id}/update/)")
-    headers = {'Authorization': f'Token {token}'}
-    data = {
-        'title': 'Updated Test Book',
-        'author': 'Updated API Tester'
-    }
-    try:
-        response = requests.put(f"{BASE_URL}/books/{book_id}/update/", json=data, headers=headers)
-        print(f"Status Code: {response.status_code}")
-        if response.status_code == 200:
-            result = response.json()
-            print(f"Updated: {result}")
-        else:
-            print(f"Error: {response.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-
-def test_delete_book(book_id, token):
-    """Test deleting a book (auth required)"""
-    print(f"\n🗑️  Testing Book Deletion (DELETE /api/books/{book_id}/delete/)")
-    headers = {'Authorization': f'Token {token}'}
-    try:
-        response = requests.delete(f"{BASE_URL}/books/{book_id}/delete/", headers=headers)
-        print(f"Status Code: {response.status_code}")
-        if response.status_code == 200:
-            result = response.json()
-            print(f"Deleted: {result}")
-        else:
-            print(f"Error: {response.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-
-def test_unauthorized_operations():
-    """Test operations without authentication"""
-    print("\n🚫 Testing Unauthorized Operations")
+def test_basic_functionality():
+    """Test basic API functionality."""
+    print_header("Basic API Test")
     
-    # Try to create without auth
-    data = {'title': 'Unauthorized Book', 'author': 'No Auth'}
-    response = requests.post(f"{BASE_URL}/books/create/", json=data)
-    print(f"Create without auth - Status: {response.status_code}")
+    response = make_request('GET', '/books/')
+    if response and response.status_code == 200:
+        try:
+            data = response.json()
+            count = data.get('count', len(data)) if isinstance(data, dict) else len(data)
+            print_success(f"API is working. Found {count} books")
+            return True
+        except json.JSONDecodeError:
+            print_error("Invalid JSON response")
+            return False
+    else:
+        print_error("API test failed")
+        return False
+
+def test_filtering():
+    """Test filtering functionality."""
+    print_header("Filtering Tests")
     
-    # Try to update without auth
-    data = {'title': 'Updated Title'}
-    response = requests.put(f"{BASE_URL}/books/1/update/", json=data)
-    print(f"Update without auth - Status: {response.status_code}")
+    tests = [
+        ({'title': 'django'}, 'Title filter'),
+        ({'author': 'smith'}, 'Author filter'),
+        ({'publication_year': '2023'}, 'Year filter'),
+        ({'publication_year_gte': '2020'}, 'Year >= filter'),
+    ]
     
-    # Try to delete without auth
-    response = requests.delete(f"{BASE_URL}/books/1/delete/")
-    print(f"Delete without auth - Status: {response.status_code}")
+    for params, description in tests:
+        response = make_request('GET', '/books/', params)
+        if response and response.status_code == 200:
+            try:
+                data = response.json()
+                count = data.get('count', len(data.get('results', [])))
+                print_success(f"{description}: {count} results")
+            except json.JSONDecodeError:
+                print_error(f"{description}: Invalid JSON")
+        else:
+            print_error(f"{description}: Failed")
+
+def test_searching():
+    """Test search functionality."""
+    print_header("Search Tests")
+    
+    tests = [
+        'python',
+        'django',
+        'programming'
+    ]
+    
+    for term in tests:
+        response = make_request('GET', '/books/', {'search': term})
+        if response and response.status_code == 200:
+            try:
+                data = response.json()
+                count = data.get('count', len(data.get('results', [])))
+                print_success(f"Search '{term}': {count} results")
+            except json.JSONDecodeError:
+                print_error(f"Search '{term}': Invalid JSON")
+        else:
+            print_error(f"Search '{term}': Failed")
+
+def test_ordering():
+    """Test ordering functionality."""
+    print_header("Ordering Tests")
+    
+    tests = [
+        ('title', 'Title ascending'),
+        ('-title', 'Title descending'),
+        ('publication_year', 'Year ascending'),
+        ('-publication_year', 'Year descending'),
+        ('author,title', 'Author then title'),
+    ]
+    
+    for ordering, description in tests:
+        response = make_request('GET', '/books/', {'ordering': ordering})
+        if response and response.status_code == 200:
+            try:
+                data = response.json()
+                results = data.get('results', [])
+                if results:
+                    first_title = results[0].get('title', 'N/A')
+                    print_success(f"{description}: First book - '{first_title}'")
+                else:
+                    print_success(f"{description}: No results")
+            except json.JSONDecodeError:
+                print_error(f"{description}: Invalid JSON")
+        else:
+            print_error(f"{description}: Failed")
+
+def test_combined():
+    """Test combined filtering, searching, and ordering."""
+    print_header("Combined Operations")
+    
+    tests = [
+        ({'search': 'python', 'ordering': '-publication_year'}, 'Search + Order'),
+        ({'author': 'smith', 'publication_year_gte': '2020'}, 'Author + Year filter'),
+        ({'title': 'django', 'ordering': 'title'}, 'Title filter + Order'),
+    ]
+    
+    for params, description in tests:
+        response = make_request('GET', '/books/', params)
+        if response and response.status_code == 200:
+            try:
+                data = response.json()
+                count = data.get('count', len(data.get('results', [])))
+                print_success(f"{description}: {count} results")
+            except json.JSONDecodeError:
+                print_error(f"{description}: Invalid JSON")
+        else:
+            print_error(f"{description}: Failed")
 
 def main():
-    print("🧪 Starting API Tests...")
+    """Run all tests."""
+    print("Django REST Framework Filtering Test Suite")
     
-    # Test read operations (no auth required)
-    test_list_books()
-    test_book_detail()
+    if not test_basic_functionality():
+        print_error("Basic API test failed. Exiting.")
+        return
     
-    # Test unauthorized operations
-    test_unauthorized_operations()
+    test_filtering()
+    test_searching()
+    test_ordering()
+    test_combined()
     
-    # Get authentication token
-    print("\n🔑 Getting authentication token...")
-    token = get_auth_token()
-    if not token:
-        print("❌ Could not get authentication token. Make sure to run:")
-        print("   python manage.py create_test_data")
-        sys.exit(1)
-    
-    print(f"✅ Got token: {token[:20]}...")
-    
-    # Test authenticated operations
-    created_book_id = test_create_book(token)
-    if created_book_id:
-        test_update_book(created_book_id, token)
-        test_delete_book(created_book_id, token)
-    
-    print("\n🎉 API tests completed!")
+    print_header("Test Complete")
+    print("\nExample API calls:")
+    print(f"curl '{API_BASE}/books/?title=django'")
+    print(f"curl '{API_BASE}/books/?search=python&ordering=-publication_year'")
+    print(f"curl '{API_BASE}/books/?author=smith&publication_year_gte=2020'")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
 EOF
-
-chmod +x test_api.py
-
-# Step 8: Create comprehensive documentation
-echo "📝 Creating comprehensive documentation..."
-cat > API_DOCUMENTATION.md << 'EOF'
-# Django REST Framework Generic Views API Documentation
-
-## Overview
-This API provides full CRUD operations for Book management using Django REST Framework's generic views with proper authentication and permissions.
-
-## Authentication
-- **Token Authentication**: Required for write operations (CREATE, UPDATE, DELETE)
-- **Session Authentication**: Available for web browsing
-- **Anonymous Access**: Allowed for read operations (LIST, RETRIEVE)
-
-## Base URL
-```
-http://127.0.0.1:8000/api/
-```
-
-## Authentication Endpoints
-
-### Get Authentication Token
-```http
-POST /api-token-auth/
-```
-**Body:**
-```json
-{
-    "username": "your_username",
-    "password": "your_password"
+    
+    chmod +x test_filtering.py
+    print_success "Created test script: test_filtering.py"
 }
-```
-**Response:**
-```json
-{
-    "token": "your_authentication_token"
-}
-```
 
-## Book Endpoints
+# Create quick documentation
+create_quick_docs() {
+    print_header "STEP 6: CREATING DOCUMENTATION"
+    
+    print_step "Creating API usage documentation..."
+    cat > FILTERING_GUIDE.md << 'EOF'
+# Django REST Framework Filtering, Searching, and Ordering Guide
 
-### 1. List All Books
-```http
-GET /api/books/
-```
-- **Permission**: Public (no authentication required)
-- **Description**: Retrieve all books with optional filtering
-- **Query Parameters**:
-  - `title`: Filter by title (case-insensitive contains)
-  - `author`: Filter by author (case-insensitive contains)
+## Quick Start
 
-**Example:**
+Your Book API now supports advanced filtering, searching, and ordering!
+
+## Available Features
+
+### 🔍 Filtering
+- `title` - Contains match (case-insensitive)
+- `title_exact` - Exact match
+- `author` - Contains match (case-insensitive)
+- `author_exact` - Exact match
+- `publication_year` - Exact year
+- `publication_year_gte` - Year >= value
+- `publication_year_lte` - Year <= value
+
+### 🔎 Searching
+- `search` - Search across title and author fields
+
+### 📊 Ordering
+- `ordering` - Sort by field(s)
+- Use `-` prefix for descending order
+- Multiple fields: `ordering=author,title`
+
+## Usage Examples
+
 ```bash
-curl -X GET "http://127.0.0.1:8000/api/books/?title=django"
+# Filter by title containing 'django'
+curl "http://127.0.0.1:8000/api/books/?title=django"
+
+# Search for 'python' and order by newest first
+curl "http://127.0.0.1:8000/api/books/?search=python&ordering=-publication_year"
+
+# Filter by author and year range
+curl "http://127.0.0.1:8000/api/books/?author=smith&publication_year_gte=2020"
+
+# Multiple filters with ordering
+curl "http://127.0.0.1:8000/api/books/?title=django&author=vincent&ordering=title"
+
+# Exact matches
+curl "http://127.0.0.1:8000/api/books/?title_exact=Django for Beginners"
 ```
 
-**Response:**
+## Testing
+
+Run the test script to verify everything works:
+```bash
+python test_filtering.py
+```
+
+## Response Format
+
+All responses are paginated and include:
+- `count` - Total number of results
+- `next` - URL for next page
+- `previous` - URL for previous page
+- `results` - Array of book objects
+
+Example response:
 ```json
-[
+{
+  "count": 25,
+  "next": "http://127.0.0.1:8000/api/books/?page=2",
+  "previous": null,
+  "results": [
     {
-        "id": 1,
-        "title": "Django for Beginners",
-        "author": "William Vincent"
-    },
-    {
-        "id": 2,
-        "title": "Two Scoops of Django",
-        "author": "Daniel Roy Greenfeld"
+      "id": 1,
+      "title": "Django for Beginners",
+      "author": "William S. Vincent",
+      "publication_year": 2023
     }
-]
-```
-
-### 2. Get Book Details
-```http
-GET /api/books/{id}/
-```
-- **Permission**: Public (no authentication required)
-- **Description**: Retrieve a specific book by ID
-
-**Example:**
-```bash
-curl -X GET "http://127.0.0.1:8000/api/books/1/"
-```
-
-**Response:**
-```json
-{
-    "id": 1,
-    "title": "Django for Beginners",
-    "author": "William Vincent"
+  ]
 }
 ```
-
-### 3. Create New Book
-```http
-POST /api/books/create/
-```
-- **Permission**: Authenticated users only
-- **Description**: Create a new book
-
-**Headers:**
-```
-Authorization: Token your_token_here
-Content-Type: application/json
-```
-
-**Body:**
-```json
-{
-    "title": "New Book Title",
-    "author": "Author Name"
-}
-```
-
-**Example:**
-```bash
-curl -X POST "http://127.0.0.1:8000/api/books/create/" \
-     -H "Authorization: Token your_token_here" \
-     -H "Content-Type: application/json" \
-     -d '{"title": "New Book", "author": "New Author"}'
-```
-
-**Response:**
-```json
-{
-    "message": "Book created successfully",
-    "data": {
-        "id": 3,
-        "title": "New Book Title",
-        "author": "Author Name"
-    }
-}
-```
-
-### 4. Update Book
-```http
-PUT /api/books/{id}/update/
-PATCH /api/books/{id}/update/
-```
-- **Permission**: Authenticated users only
-- **Description**: Update an existing book (PUT for full update, PATCH for partial)
-
-**Headers:**
-```
-Authorization: Token your_token_here
-Content-Type: application/json
-```
-
-**Body (PUT - all fields required):**
-```json
-{
-    "title": "Updated Book Title",
-    "author": "Updated Author Name"
-}
-```
-
-**Body (PATCH - partial update):**
-```json
-{
-    "title": "Just Update Title"
-}
-```
-
-**Example:**
-```bash
-curl -X PATCH "http://127.0.0.1:8000/api/books/1/update/" \
-     -H "Authorization: Token your_token_here" \
-     -H "Content-Type: application/json" \
-     -d '{"title": "Updated Title"}'
-```
-
-**Response:**
-```json
-{
-    "message": "Book updated successfully",
-    "data": {
-        "id": 1,
-        "title": "Updated Title",
-        "author": "Original Author"
-    }
-}
-```
-
-### 5. Delete Book
-```http
-DELETE /api/books/{id}/delete/
-```
-- **Permission**: Authenticated users only
-- **Description**: Delete a specific book
-
-**Headers:**
-```
-Authorization: Token your_token_here
-```
-
-**Example:**
-```bash
-curl -X DELETE "http://127.0.0.1:8000/api/books/1/delete/" \
-     -H "Authorization: Token your_token_here"
-```
-
-**Response:**
-```json
-{
-    "message": "Book \"Book Title\" deleted successfully"
-}
-```
-
-## Error Responses
-
-### 401 Unauthorized
-```json
-{
-    "detail": "Authentication credentials were not provided."
-}
-```
-
-### 403 Forbidden
-```json
-{
-    "detail": "You do not have permission to perform this action."
-}
-```
-
-### 404 Not Found
-```json
-{
-    "detail": "Not found."
-}
-```
-
-### 400 Bad Request
-```json
-{
-    "message": "Failed to create book",
-    "errors": {
-        "title": ["This field is required."]
-    }
-}
-```
-
-## Testing the API
-
-### 1. Setup Test Data
-```bash
-python manage.py create_test_data
-```
-
-### 2. Run Automated Tests
-```bash
-python test_api.py
-```
-
-### 3. Manual Testing with curl
-
-**Get all books:**
-```bash
-curl -X GET "http://127.0.0.1:8000/api/books/"
-```
-
-**Get authentication token:**
-```bash
-curl -X POST "http://127.0.0.1:8000/api-token-auth/" \
-     -d "username=testuser&password=testpass123"
-```
-
-**Create a book:**
-```bash
-curl -X POST "http://127.0.0.1:8000/api/books/create/" \
-     -H "Authorization: Token YOUR_TOKEN_HERE" \
-     -H "Content-Type: application/json" \
-     -d '{"title": "Test Book", "author": "Test Author"}'
-```
-
-## Implementation Details
-
-### Generic Views Used
-- **BookListView**: `generics.ListAPIView` for listing books
-- **BookDetailView**: `generics.RetrieveAPIView` for book details
-- **BookCreateView**: `generics.CreateAPIView` for creating books
-- **BookUpdateView**: `generics.UpdateAPIView` for updating books
-- **BookDeleteView**: `generics.DestroyAPIView` for deleting books
-
-### Permissions
-- **IsAuthenticatedOrReadOnly**: Allows read access to everyone, write access only to authenticated users
-- **IsAuthenticated**: Requires authentication for all operations
-
-### Custom Features
-- Custom response formats with success/error messages
-- Query parameter filtering for book list
-- Proper error handling with meaningful messages
-- Token authentication support
-- Browsable API interface available at endpoints
 EOF
+    
+    print_success "Created documentation: FILTERING_GUIDE.md"
+}
 
-# Step 9: Update README.md
-echo "📄 Updating README.md..."
-cat >> README.md << 'EOF'
+# Run migrations
+run_migrations() {
+    print_header "STEP 7: RUNNING MIGRATIONS"
+    
+    print_step "Running Django migrations..."
+    python manage.py makemigrations
+    python manage.py migrate
+    print_success "Migrations completed"
+}
 
-## Generic Views Implementation
+# Main execution function
+main() {
+    print_header "DJANGO REST FRAMEWORK FILTERING SETUP"
+    print_info "Implementing filtering, searching, and ordering for your existing Django project"
+    
+    # Execute steps
+    check_directory
+    install_django_filter
+    update_settings
+    create_filters
+    update_views
+    create_test_script
+    create_quick_docs
+    run_migrations
+    
+    print_header "🎉 IMPLEMENTATION COMPLETE!"
+    
+    print_success "Successfully implemented:"
+    echo "  ✅ Django-filter installed"
+    echo "  ✅ Settings updated"
+    echo "  ✅ Custom filters created (api/filters.py)"
+    echo "  ✅ Views enhanced with filtering/searching/ordering"
+    echo "  ✅ Test script created (test_filtering.py)"
+    echo "  ✅ Documentation created (FILTERING_GUIDE.md)"
+    echo "  ✅ Migrations applied"
+    
+    print_header "NEXT STEPS"
+    print_info "1. Start your Django server:"
+    echo "   python manage.py runserver"
+    
+    print_info "2. Test the implementation:"
+    echo "   python test_filtering.py"
+    
+    print_info "3. Try example API calls:"
+    echo "   curl 'http://127.0.0.1:8000/api/books/?title=django'"
+    echo "   curl 'http://127.0.0.1:8000/api/books/?search=python&ordering=-publication_year'"
+    
+    print_info "4. Read the guide:"
+    echo "   cat FILTERING_GUIDE.md"
+    
+    print_success "Your API now supports comprehensive filtering, searching, and ordering! 🚀"
+}
 
-This project now includes comprehensive CRUD operations using Django REST Framework's generic views.
-
-### New Features Added:
-- ✅ Generic views for all CRUD operations
-- ✅ Token authentication system
-- ✅ Proper permission controls
-- ✅ Custom response formats
-- ✅ Query parameter filtering
-- ✅ Comprehensive error handling
-- ✅ Test data management command
-- ✅ Automated API testing script
-
-### API Endpoints:
-- `GET /api/books/` - List all books (public)
-- `GET /api/books/<id>/` - Get book details (public)
-- `POST /api/books/create/` - Create new book (auth required)
-- `PUT/PATCH /api/books/<id>/update/` - Update book (auth required)
-- `DELETE /api/books/<id>/delete/` - Delete book (auth required)
-
-### Authentication:
-- `POST /api-token-auth/` - Get authentication token
-- `GET /api-auth/` - Browsable API login/logout
-
-### Quick Start:
-1. Activate virtual environment: `source venv/bin/activate`
-2. Create test data: `python manage.py create_test_data`
-3. Start server: `python manage.py runserver`
-4. Test API: `python test_api.py`
-
-### Documentation:
-See `API_DOCUMENTATION.md` for complete API documentation with examples.
-EOF
-
-echo ""
-echo "🎉 Django REST Framework Generic Views setup complete!"
-echo ""
-echo "📋 Summary of what was implemented:"
-echo "   ✅ Generic views for all CRUD operations"
-echo "   ✅ Token authentication with proper permissions"
-echo "   ✅ Custom response formats and error handling"
-echo "   ✅ URL patterns for all CRUD endpoints"
-echo "   ✅ Test data management command"
-echo "   ✅ Automated API testing script"
-echo "   ✅ Comprehensive API documentation"
-echo "   ✅ Query parameter filtering for book list"
-echo ""
-echo "🚀 Next steps:"
-echo "   1. Create test data: python manage.py create_test_data"
-echo "   2. Start the development server: python manage.py runserver"
-echo "   3. Test the API: python test_api.py"
-echo "   4. Visit http://127.0.0.1:8000/api/ to see available endpoints"
-echo "   5. Check API_DOCUMENTATION.md for detailed usage examples"
-echo ""
-echo "🔐 Test credentials:"
-echo "   Username: testuser"
-echo "   Password: testpass123"
-echo ""
-echo "📚 API Endpoints:"
-echo "   GET    /api/books/              - List all books (public)"
-echo "   GET    /api/books/<id>/         - Get book details (public)"
-echo "   POST   /api/books/create/       - Create book (auth required)"
-echo "   PUT    /api/books/<id>/update/  - Update book (auth required)"
-echo "   DELETE /api/books/<id>/delete/  - Delete book (auth required)"
-echo ""
-echo "Happy coding! 🐍✨"
+# Run the script
+main "$@"
