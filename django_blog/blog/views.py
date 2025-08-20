@@ -18,15 +18,14 @@ class PostListView(ListView):
     template_name = "blog/post_list.html"
 
     def get_queryset(self):
-        queryset = super().get_queryset()
         query = self.request.GET.get("q")
         if query:
-            queryset = queryset.filter(
+            return Post.objects.filter(
                 Q(title__icontains=query)
                 | Q(content__icontains=query)
                 | Q(tags__name__icontains=query)
             ).distinct()
-        return queryset
+        return Post.objects.all()
 
 
 class PostDetailView(DetailView):
