@@ -1,14 +1,3 @@
-#!/bin/bash
-# Script to create test_views.py for DRF API unit tests
-# Project: advanced-api-project
-
-set -e
-
-PROJECT_DIR="$(pwd)"
-API_DIR="$PROJECT_DIR/api"
-
-echo "[*] Writing api/test_views.py..."
-cat > "$API_DIR/test_views.py" <<'EOF'
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -75,9 +64,3 @@ class BookAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         titles = [book['title'] for book in response.data]
         self.assertEqual(titles, sorted(titles))
-EOF
-
-echo "[*] Done!"
-echo ">>> Run tests with:"
-echo "    python manage.py test api"
-
